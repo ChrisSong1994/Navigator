@@ -18,6 +18,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { parseBookmarksHtml } from '../src/config/bookmarks.ts'
 import { DEFAULT_SETTINGS } from '../src/config/schema.ts'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -43,120 +44,19 @@ if (!existsSync(inputPath)) fail(`✗ 找不到书签文件 ${rel(inputPath)}`)
 
 // ---------------------------------------------------------------- 解析 HTML
 
-const TOKEN = /<DT>\s*<H3([^>]*)>([\s\S]*?)<\/H3>|<DT>\s*<A([^>]*)>([\s\S]*?)<\/A>|<DL\s*\/?>|<\/DL>/gi
-
-const ENTITIES = {
-  amp: '&',
-  lt: '<',
-  gt: '>',
-  quot: '"',
-  apos: "'",
-  nbsp: ' ',
-}
-
-function decodeEntities(text) {
-  return text
-    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(Number.parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(Number(dec)))
-    .replace(/&([a-z]+);/gi, (match, name) => ENTITIES[name.toLowerCase()] ?? match)
-    .trim()
-}
-
-function readAttr(attrs, name) {
-  const match = new RegExp(`${name}\\s*=\\s*"([^"]*)"`, 'i').exec(attrs)
-  return match ? decodeEntities(match[1]) : ''
-}
-
-const createNode = (name, toolbar = false) => ({ name, toolbar, links: [], folders: [] })
-
-const rootNode = createNode('书签栏')
-let current = rootNode
-const stack = []
-let pendingFolder = null
-let anchorCount = 0
-
+// 解析逻辑与配置面板的上传共用同一份实现（src/config/bookmarks.ts），避免两边分叉
 const html = readFileSync(inputPath, 'utf8')
-let token
-while ((token = TOKEN.exec(html)) !== null) {
-  const [text] = token
-  if (token[1] !== undefined) {
-    // 文件夹标题：先记住，等紧随其后的 <DL> 真正进入
-    const toolbar = /PERSONAL_TOOLBAR_FOLDER\s*=\s*"true"/i.test(token[1])
-    pendingFolder = createNode(decodeEntities(token[2]), toolbar)
-  } else if (token[3] !== undefined) {
-    const href = readAttr(token[3], 'HREF')
-    const linkText = decodeEntities(token[4])
-    if (href) {
-      current.links.push({ icon: keepIcons ? readAttr(token[3], 'ICON') : '', href, text: linkText || href })
-      anchorCount += 1
-    }
-  } else if (text.startsWith('<DL')) {
-    if (pendingFolder) {
-      current.folders.push(pendingFolder)
-      stack.push(current)
-      current = pendingFolder
-      pendingFolder = null
-    } else {
-      // 顶层（书签栏）自己的 <DL>，或跟在链接后的嵌套结构：只为配对而压栈
-      stack.push(null)
-    }
-  } else if (text.startsWith('</DL')) {
-    const parent = stack.pop()
-    if (parent) current = parent
-  }
+let groups
+let groupCount
+let linkCount
+try {
+  const parsed = parseBookmarksHtml(html, { keepIcons })
+  groups = parsed.groups
+  groupCount = parsed.stats.groups
+  linkCount = parsed.stats.links
+} catch (error) {
+  fail(`✗ ${rel(inputPath)} 解析失败：${error.message}`)
 }
-
-if (anchorCount === 0) fail(`✗ 没有从 ${rel(inputPath)} 里解析出任何书签，格式可能不是 Chrome 导出文件`)
-
-// ---------------------------------------------------------------- 转成分组
-
-const DEFAULT_GROUP_ID = 'default'
-const DEFAULT_GROUP_TITLE = '常用'
-
-/** 书签栏节点：带 PERSONAL_TOOLBAR_FOLDER 的顶层文件夹，退化为「名字与根同名」或第一个顶层文件夹 */
-const toolbarNode =
-  rootNode.folders.find((folder) => folder.toolbar) ??
-  rootNode.folders.find((folder) => folder.name === rootNode.name) ??
-  rootNode.folders[0] ??
-  null
-
-const groups = {}
-
-function addGroup(id, title, links) {
-  const existing = groups[id]
-  if (!existing) {
-    groups[id] = { title, links: [...links] }
-    return
-  }
-  const known = new Set(existing.links.map((link) => link.href))
-  for (const link of links) {
-    if (!known.has(link.href)) existing.links.push(link)
-  }
-}
-
-// 书签栏的直接链接 + 顶层游离链接，统一放到「常用」
-const commonLinks = [...(toolbarNode?.links ?? []), ...rootNode.links]
-if (commonLinks.length > 0) addGroup(DEFAULT_GROUP_ID, DEFAULT_GROUP_TITLE, commonLinks)
-
-const visited = new Set()
-function walk(folder, titles) {
-  if (folder.links.length > 0) addGroup(titles.join('/'), titles.join(' / '), folder.links)
-  for (const child of folder.folders) walk(child, [...titles, child.name])
-}
-
-for (const folder of toolbarNode?.folders ?? []) {
-  visited.add(folder)
-  walk(folder, [folder.name])
-}
-for (const folder of rootNode.folders) {
-  if (visited.has(folder) || folder === toolbarNode) continue
-  walk(folder, [folder.name])
-}
-
-const groupCount = Object.keys(groups).length
-const linkCount = Object.values(groups).reduce((total, group) => total + group.links.length, 0)
-
-if (groupCount === 0) fail('✗ 解析结果里没有分组，已放弃写入')
 
 // ---------------------------------------------------------------- 生成 JSON5
 
@@ -173,7 +73,8 @@ function render() {
     '{',
     '  settings: {',
     `    siteTitle: ${q(DEFAULT_SETTINGS.siteTitle)},`,
-    '    primaryColor: "", // 留空表示使用 antd 默认主色',
+    '    siteLogo: "", // 站点 logo，base64 data URL 或图片地址，留空则不显示',
+    '    primaryColor: "", // 留空表示使用内置默认主色 #2f54eb',
     `    linkFontSize: ${DEFAULT_SETTINGS.linkFontSize}, // 链接文字字号 12~20`,
     `    linkCardGap: ${DEFAULT_SETTINGS.linkCardGap}, // 卡片之间 / 列表行之间的间距 4~48`,
     '    themeMode: "system", // system | light | dark',

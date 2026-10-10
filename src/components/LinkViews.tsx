@@ -1,11 +1,12 @@
-import { DeleteOutlined, EditOutlined, MoreOutlined } from '@ant-design/icons'
+import { DeleteOutlined, EditOutlined, HolderOutlined, MoreOutlined } from '@ant-design/icons'
+import { rectSortingStrategy, SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { App, Dropdown } from 'antd'
 import type { MenuProps } from 'antd'
 import { memo, useState } from 'react'
-import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react'
+import type { MouseEvent as ReactMouseEvent } from 'react'
 import { useConfig } from '../config/configContext.ts'
 import type { NavLink } from '../config/schema.ts'
-import { useLinkSort } from '../hooks/linkSort.ts'
 import { LinkFormModal } from './LinkFormModal.tsx'
 import { LinkIcon } from './LinkIcon.tsx'
 
@@ -15,20 +16,27 @@ interface LinkItemProps {
   index: number
   fontSize: number
   card: boolean
-  /** 以下都由分组视图传进来：单条链接不订阅拖拽 context，否则 1000+ 条会跟着高亮一起重渲染 */
+  /** 搜索过滤时列表只是子集，关闭拖拽，避免用过滤后的下标改坏真实顺序 */
   sortable: boolean
-  isOver: boolean
-  isDragged: boolean
-  onPress: (event: ReactPointerEvent<HTMLElement>, groupId: string, index: number) => void
-  swallowClick: () => boolean
 }
 
-function LinkItemBase({ link, groupId, index, fontSize, card, sortable, isOver, isDragged, onPress, swallowClick }: LinkItemProps) {
+function linkSortableId(groupId: string, index: number) {
+  return `link:${encodeURIComponent(groupId)}:${index}`
+}
+
+function LinkItemBase({ link, groupId, index, fontSize, card, sortable }: LinkItemProps) {
   const { groups, removeLink } = useConfig()
   const { modal } = App.useApp()
   const [menuOpen, setMenuOpen] = useState(false)
   const [contextOpen, setContextOpen] = useState(false)
   const [editing, setEditing] = useState(false)
+
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging, isOver } = useSortable({
+    id: linkSortableId(groupId, index),
+    data: { groupId, index },
+    disabled: !sortable,
+    transition: { duration: 180, easing: 'ease' },
+  })
 
   const group = groups[groupId]
 
@@ -53,12 +61,10 @@ function LinkItemBase({ link, groupId, index, fontSize, card, sortable, isOver, 
     }
   }
 
-  // 按住拖拽结束后浏览器还会补一个 click，这里挡掉，避免一松手就跳转
   const onClick = (event: ReactMouseEvent<HTMLAnchorElement>) => {
-    if (swallowClick()) {
-      event.preventDefault()
-      event.stopPropagation()
-    }
+    if (!isDragging) return
+    event.preventDefault()
+    event.stopPropagation()
   }
 
   // hover 上要再把文字色写一遍：antd 重置里的 a:hover（权重 0,1,1）会盖掉 text-[...]（0,1,0），
@@ -69,8 +75,7 @@ function LinkItemBase({ link, groupId, index, fontSize, card, sortable, isOver, 
       : 'flex items-center gap-3 py-2.5 pl-3.5 pr-11 text-[var(--spirit-text)] no-underline transition-colors hover:bg-[var(--spirit-inset-hover)] hover:text-[var(--spirit-text)]',
     'select-none',
     // 落点高亮画在框内，分组间距调小时也不会压到相邻的卡片
-    isOver ? 'ring-2 ring-inset ring-[var(--spirit-accent)]' : '',
-    isDragged ? 'cursor-grabbing opacity-40' : '',
+    isOver && !isDragging ? 'ring-2 ring-inset ring-[var(--spirit-accent)]' : '',
   ]
     .filter(Boolean)
     .join(' ')
@@ -78,11 +83,9 @@ function LinkItemBase({ link, groupId, index, fontSize, card, sortable, isOver, 
   return (
     <Dropdown trigger={['contextMenu']} menu={{ items: menuItems, onClick: onMenuClick }} open={contextOpen} onOpenChange={setContextOpen}>
       <div
-        data-nav-item
-        data-group-id={groupId}
-        data-index={index}
-        className="group/nav relative"
-        onPointerDown={sortable ? (event) => onPress(event, groupId, index) : undefined}
+        ref={setNodeRef}
+        style={{ transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 20 : undefined }}
+        className={`group/nav relative ${isDragging ? 'opacity-40' : ''}`}
       >
         <a
           href={link.href}
@@ -123,6 +126,19 @@ function LinkItemBase({ link, groupId, index, fontSize, card, sortable, isOver, 
           </Dropdown>
         </div>
 
+        {sortable && (
+          <button
+            type="button"
+            aria-label="拖拽调整链接顺序"
+            title="拖拽调整链接顺序"
+            className="absolute left-1 top-1/2 z-10 grid h-6 w-6 -translate-y-1/2 cursor-grab touch-none place-items-center rounded-md border-none bg-[var(--spirit-surface)] p-0 leading-none text-[var(--spirit-muted)] opacity-0 shadow-sm transition-opacity group-hover/nav:opacity-100 focus-visible:opacity-100 active:cursor-grabbing"
+            {...attributes}
+            {...listeners}
+          >
+            <HolderOutlined />
+          </button>
+        )}
+
         {editing && group && <LinkFormModal groupId={groupId} groupTitle={group.title} link={link} onClose={() => setEditing(false)} />}
       </div>
     </Dropdown>
@@ -137,45 +153,35 @@ interface LinkGroupViewProps {
   card: boolean
   fontSize: number
   gap: number
+  sortable: boolean
 }
 
 /** 卡片模式：自适应网格；列表模式：一整个面板内分行 */
-export function LinkGroupView({ groupId, links, card, fontSize, gap }: LinkGroupViewProps) {
-  const { sortable, dragging, over, startPress, swallowClick } = useLinkSort()
-  const overIndex = over?.groupId === groupId ? over.index : -1
-  const draggedIndex = dragging?.groupId === groupId ? dragging.index : -1
+export function LinkGroupView({ groupId, links, card, fontSize, gap, sortable }: LinkGroupViewProps) {
+  const sortableIds = links.map((_, index) => linkSortableId(groupId, index))
 
-  const itemProps = (link: NavLink, index: number) => ({
-    link,
-    groupId,
-    index,
-    fontSize,
-    sortable,
-    isOver: index === overIndex,
-    isDragged: index === draggedIndex,
-    onPress: startPress,
-    swallowClick,
-  })
-
-  if (card) {
-    return (
-      <div
-        className="grid"
-        style={{ gap, gridTemplateColumns: `repeat(auto-fill, minmax(${Math.max(168, fontSize * 13)}px, 1fr))` }}
-      >
-        {links.map((link, index) => (
-          <LinkItem key={link.href} card {...itemProps(link, index)} />
-        ))}
-      </div>
-    )
-  }
-  return (
+  const content = card ? (
+    <div
+      className="grid"
+      style={{ gap, gridTemplateColumns: `repeat(auto-fill, minmax(${Math.max(168, fontSize * 13)}px, 1fr))` }}
+    >
+      {links.map((link, index) => (
+        <LinkItem key={`${link.href}-${index}`} link={link} groupId={groupId} index={index} fontSize={fontSize} card sortable={sortable} />
+      ))}
+    </div>
+  ) : (
     <div className="overflow-hidden rounded-xl bg-[var(--spirit-inset)]">
       {links.map((link, index) => (
-        <div key={link.href} className={index > 0 ? 'border-t border-[var(--spirit-border)]' : undefined}>
-          <LinkItem card={false} {...itemProps(link, index)} />
+        <div key={`${link.href}-${index}`} className={index > 0 ? 'border-t border-[var(--spirit-border)]' : undefined}>
+          <LinkItem link={link} groupId={groupId} index={index} fontSize={fontSize} card={false} sortable={sortable} />
         </div>
       ))}
     </div>
+  )
+
+  return (
+    <SortableContext items={sortableIds} strategy={card ? rectSortingStrategy : verticalListSortingStrategy}>
+      {content}
+    </SortableContext>
   )
 }

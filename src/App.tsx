@@ -1,7 +1,6 @@
 import { PlusOutlined } from "@ant-design/icons";
 import {
   Button,
-  Drawer,
   Empty,
   FloatButton,
   Input,
@@ -20,9 +19,8 @@ import { LinkSortProvider } from "./components/LinkSortProvider.tsx";
 import { LinkGroupView } from "./components/LinkViews.tsx";
 import { ConfigProvider } from "./config/ConfigProvider.tsx";
 import { useConfig } from "./config/configContext.ts";
+import { DEFAULT_PRIMARY_COLOR } from "./config/schema.ts";
 import { useResolvedTheme } from "./hooks/useResolvedTheme.ts";
-
-const DEFAULT_PRIMARY = "#1677ff";
 
 /** 预览区里的虚线按钮（新增分组 / 空分组加链接）：底色由调用方按所在层级给 */
 const DASHED_TILE =
@@ -40,7 +38,7 @@ export default function App() {
 function ThemedShell() {
   const { settings } = useConfig();
   const resolvedTheme = useResolvedTheme(settings.themeMode);
-  const accent = settings.primaryColor || DEFAULT_PRIMARY;
+  const accent = settings.primaryColor || DEFAULT_PRIMARY_COLOR;
 
   useEffect(() => {
     document.documentElement.style.setProperty("--spirit-accent", accent);
@@ -102,7 +100,6 @@ function Page() {
   const { settings, groups, groupIds } = useConfig();
   const [keyword, setKeyword] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [tocOpen, setTocOpen] = useState(false);
   const [activeGroupId, setActiveGroupId] = useState<string | null>(
     groupIds[0] ?? null,
   );
@@ -175,7 +172,6 @@ function Page() {
       .getElementById(`nav-group-${encodeURIComponent(id)}`)
       ?.scrollIntoView({ behavior: "smooth", block: "start" });
     setActiveGroupId(id);
-    setTocOpen(false);
   }, []);
 
   return (
@@ -183,7 +179,6 @@ function Page() {
       <AppHeader
         keyword={keyword}
         onKeywordChange={setKeyword}
-        onOpenToc={() => setTocOpen(true)}
         onOpenSettings={() => setDrawerOpen(true)}
       />
 
@@ -258,6 +253,7 @@ function Page() {
                       card={settings.viewMode === "card"}
                       fontSize={settings.linkFontSize}
                       gap={settings.linkCardGap}
+                      sortable={!hasKeyword}
                     />
                   )}
                 </section>
@@ -280,21 +276,6 @@ function Page() {
       </main>
 
       <FloatButton.BackTop style={{ insetInlineEnd: 28, insetBlockEnd: 28 }} />
-      <Drawer
-        open={tocOpen}
-        onClose={() => setTocOpen(false)}
-        placement="left"
-        width={288}
-        title="分组目录"
-      >
-        <GroupToc
-          groupIds={visibleGroupIds}
-          groups={groups}
-          activeGroupId={activeGroupId}
-          onNavigate={navigateToGroup}
-          className="flex h-full"
-        />
-      </Drawer>
       <ConfigDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
       {addingTo && groups[addingTo] && (
         <LinkFormModal

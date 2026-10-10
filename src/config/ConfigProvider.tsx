@@ -5,12 +5,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { ConfigContext } from './configContext.ts'
-import type { ConfigContextValue } from './configContext.ts'
-import { createMeta, linkKey, mergeWithRuntime } from './merge.ts'
+import type { ConfigContextValue, ImportMode, ImportPayload, ImportResult } from './configContext.ts'
+import { createMeta, linkKey, mergeImported, mergeWithRuntime, replacementTombstones } from './merge.ts'
 import type { LocalMeta } from './merge.ts'
 import { RUNTIME_CONFIG } from './runtime.ts'
+import { parseConfig } from './schema.ts'
 import type { NavConfig, NavGroup, NavLink, NavSettings } from './schema.ts'
-import { clearLocal, exportConfigFile, loadLocal, readConfigFile, saveLocal } from './storage.ts'
+import { clearLocal, exportBookmarksFile, exportConfigFile, loadLocal, saveLocal } from './storage.ts'
 
 interface ConfigState {
   config: NavConfig
@@ -98,6 +99,18 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
 
   const moveGroup = useCallback((groupId: string, offset: -1 | 1) => {
     mutateGroups((groups) => moveInRecord(groups, groupId, offset))
+  }, [mutateGroups])
+
+  const setGroupOrder = useCallback((ids: string[]) => {
+    mutateGroups((groups) => {
+      if (ids.length !== Object.keys(groups).length) return groups
+      const ordered: Record<string, NavGroup> = {}
+      for (const id of ids) {
+        if (!groups[id]) return groups
+        ordered[id] = groups[id]
+      }
+      return ordered
+    })
   }, [mutateGroups])
 
   const removeGroup = useCallback((groupId: string) => {
@@ -197,14 +210,74 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     )
   }, [mutateGroups])
 
-  const importConfig = useCallback(async (file: File) => {
-    const imported = await readConfigFile(file)
-    setState({ config: imported, meta: createMeta(RUNTIME_CONFIG), notice: false })
-  }, [])
+  /**
+   * 落地一份上传内容。
+   *
+   * 合并：保留现有 meta（runtimeHash / baseSettings 不动），只清掉本次重新引入的墓碑 —— 不清的话
+   *   刚导进来的分组会被 deletedGroups 拦掉（mergeWithRuntime 两个循环都 continue）、链接会被
+   *   deletedLinks 过滤掉，下次内置配置一变就凭空消失。与 addGroup / addLink 的做法一致。
+   * 替换：重建 meta，并把「替换内容里没有的内置分组 / 链接」全记成墓碑 —— 「全部替换成新的」意味着
+   *   现在这份就是全部，之后内置配置变动不该把用户刚换掉的内容又并回来（要拿回内置内容有专门的
+   *   「恢复内置配置」按钮）。
+   */
+  const applyImport = useCallback((payload: ImportPayload, mode: ImportMode): ImportResult => {
+    const current = state.config
+
+    if (mode === 'replace') {
+      const { config: replaced, errors } = parseConfig({
+        settings: payload.settings ?? current.settings,
+        groups: payload.groups,
+      })
+      if (!replaced) throw new Error(errors.join('\n'))
+      // 空配置在 schema 里只是警告，但让它落地就会把整页清空 —— 这里挡掉
+      if (Object.keys(replaced.groups).length === 0) throw new Error('文件里没有任何分组，已取消替换')
+
+      setState({
+        config: replaced,
+        meta: { ...createMeta(RUNTIME_CONFIG), ...replacementTombstones(RUNTIME_CONFIG, replaced.groups) },
+        notice: false,
+      })
+
+      return {
+        mode,
+        addedGroups: Object.keys(replaced.groups).length,
+        addedLinks: Object.values(replaced.groups).reduce((total, group) => total + group.links.length, 0),
+        skippedLinks: 0,
+      }
+    }
+
+    const merged = mergeImported(current.groups, payload.groups)
+    const touchedGroups = new Set(merged.touchedGroupIds)
+    const touchedLinks = new Set(merged.touchedLinkKeys)
+
+    setState((prev) => ({
+      ...prev,
+      config: { ...prev.config, groups: merged.groups },
+      meta: {
+        ...prev.meta,
+        deletedGroups: prev.meta.deletedGroups.filter((id) => !touchedGroups.has(id)),
+        deletedLinks: prev.meta.deletedLinks.filter((key) => !touchedLinks.has(key)),
+        updatedAt: Date.now(),
+      },
+      notice: false,
+    }))
+
+    return {
+      mode,
+      addedGroups: merged.addedGroupIds.length,
+      addedLinks: merged.addedLinks.length,
+      skippedLinks: merged.skippedLinks,
+    }
+    // state 作为依赖：合并要基于最新配置算，替换要拿当前 settings 兜底
+  }, [state])
 
   const exportConfig = useCallback(() => {
     exportConfigFile(config)
   }, [config])
+
+  const exportBookmarks = useCallback(() => {
+    exportBookmarksFile(config.groups)
+  }, [config.groups])
 
   const remargeRuntime = useCallback(() => {
     setState((prev) => {
@@ -232,14 +305,16 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       addGroup,
       renameGroup,
       moveGroup,
+      setGroupOrder,
       removeGroup,
       addLink,
       updateLink,
       moveLink,
       moveLinkTo,
       removeLink,
-      importConfig,
+      applyImport,
       exportConfig,
+      exportBookmarks,
       remargeRuntime,
       resetToRuntime,
     }),
@@ -251,14 +326,16 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       addGroup,
       renameGroup,
       moveGroup,
+      setGroupOrder,
       removeGroup,
       addLink,
       updateLink,
       moveLink,
       moveLinkTo,
       removeLink,
-      importConfig,
+      applyImport,
       exportConfig,
+      exportBookmarks,
       remargeRuntime,
       resetToRuntime,
     ],

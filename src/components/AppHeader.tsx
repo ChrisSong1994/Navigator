@@ -1,15 +1,10 @@
-import {
-  MenuOutlined,
-  SearchOutlined,
-  SettingOutlined,
-} from "@ant-design/icons";
+import { SearchOutlined, SettingOutlined } from "@ant-design/icons";
 import { Button, Input, Tooltip } from "antd";
 import { useConfig } from "../config/configContext.ts";
 
 interface AppHeaderProps {
   keyword: string;
   onKeywordChange: (value: string) => void;
-  onOpenToc: () => void;
   onOpenSettings: () => void;
 }
 
@@ -17,7 +12,6 @@ interface AppHeaderProps {
 export function AppHeader({
   keyword,
   onKeywordChange,
-  onOpenToc,
   onOpenSettings,
 }: AppHeaderProps) {
   const { settings, groupIds, linkCount } = useConfig();
@@ -25,11 +19,14 @@ export function AppHeader({
   return (
     <header className="sticky top-0 z-30 border-b border-[var(--spirit-border)] bg-[var(--spirit-surface)]/90 backdrop-blur-xl">
       <div className="mx-auto flex max-w-[1920px] flex-wrap items-center gap-x-4 gap-y-3 px-6 py-3">
-        <div className="flex items-baseline gap-2.5">
-          <span className="text-[17px] font-semibold tracking-tight text-[var(--spirit-text)]">
+        <div className="flex min-w-0 items-center gap-2.5">
+          {settings.siteLogo && (
+            <img src={settings.siteLogo} alt="" className="h-7 w-7 shrink-0 rounded-md object-contain" />
+          )}
+          <span className="truncate text-[17px] font-semibold tracking-tight text-[var(--spirit-text)]">
             {settings.siteTitle}
           </span>
-          <span className="text-xs text-[var(--spirit-muted)]">
+          <span className="shrink-0 text-xs text-[var(--spirit-muted)]">
             {groupIds.length} 组 · {linkCount} 链接
           </span>
         </div>
@@ -43,14 +40,6 @@ export function AppHeader({
             placeholder="搜索链接或分组"
             className="w-[240px]"
           />
-          <Tooltip title="分组目录">
-            <Button
-              className="lg:hidden"
-              icon={<MenuOutlined />}
-              onClick={onOpenToc}
-              aria-label="打开分组目录"
-            />
-          </Tooltip>
           <Tooltip title="配置面板">
             <Button icon={<SettingOutlined />} onClick={onOpenSettings} />
           </Tooltip>

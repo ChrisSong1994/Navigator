@@ -26,7 +26,9 @@ export interface NavGroup {
 
 export interface NavSettings {
   siteTitle: string
-  /** 空串表示使用 antd 默认主色 */
+  /** 站点 logo：base64 data URL 或图片地址，空串表示不显示 */
+  siteLogo: string
+  /** 空串表示使用内置默认主色 */
   primaryColor: string
   linkFontSize: number
   linkCardGap: number
@@ -41,9 +43,11 @@ export interface NavConfig {
 
 export const LINK_FONT_SIZE_RANGE: readonly [number, number] = [12, 20]
 export const LINK_CARD_GAP_RANGE: readonly [number, number] = [4, 48]
+export const DEFAULT_PRIMARY_COLOR = '#2f54eb'
 
 export const DEFAULT_SETTINGS: NavSettings = {
   siteTitle: '导航精灵',
+  siteLogo: '',
   primaryColor: '',
   linkFontSize: 14,
   linkCardGap: 16,
@@ -111,8 +115,12 @@ export function parseConfig(input: unknown): ParseResult {
         if (typeof raw.siteTitle !== 'string') error('settings.siteTitle', 'siteTitle 必须是字符串')
         else settings.siteTitle = raw.siteTitle.trim() || DEFAULT_SETTINGS.siteTitle
       }
+      if (raw.siteLogo !== undefined) {
+        if (typeof raw.siteLogo !== 'string') error('settings.siteLogo', 'siteLogo 必须是字符串（base64 data URL 或图片地址）')
+        else settings.siteLogo = raw.siteLogo.trim()
+      }
       if (raw.primaryColor !== undefined) {
-        if (typeof raw.primaryColor !== 'string') error('settings.primaryColor', 'primaryColor 必须是字符串，留空表示使用默认主色')
+        if (typeof raw.primaryColor !== 'string') error('settings.primaryColor', `primaryColor 必须是字符串，留空表示使用默认主色 ${DEFAULT_PRIMARY_COLOR}`)
         else settings.primaryColor = raw.primaryColor.trim()
       }
       if (raw.linkFontSize !== undefined) {
@@ -254,6 +262,7 @@ function toCanonical(config: NavConfig) {
   return {
     settings: {
       siteTitle: config.settings.siteTitle,
+      siteLogo: config.settings.siteLogo,
       primaryColor: config.settings.primaryColor,
       linkFontSize: config.settings.linkFontSize,
       linkCardGap: config.settings.linkCardGap,

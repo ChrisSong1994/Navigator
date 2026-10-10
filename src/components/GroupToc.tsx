@@ -8,7 +8,7 @@ interface GroupTocProps {
   className?: string
 }
 
-/** 文档式分组目录：桌面端固定在内容左侧，移动端在抽屉中复用同一份列表 */
+/** 文档式分组目录：桌面端固定在内容左侧；窄屏不展示（顶栏的菜单按钮与左侧抽屉已移除） */
 export function GroupToc({ groupIds, groups, activeGroupId, onNavigate, className = '' }: GroupTocProps) {
   return (
     <aside className={`min-h-0 ${className}`}>
