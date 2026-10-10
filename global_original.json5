@@ -9,6 +9,7 @@
     linkCardGap: 16, // 卡片之间 / 列表行之间的间距 4~48
     themeMode: "system", // system | light | dark
     viewMode: "card", // card | list
+    searchEngine: "google", // google | baidu | bing
   },
   groups: {
     "default": {

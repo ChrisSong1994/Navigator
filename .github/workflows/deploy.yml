@@ -65,6 +65,15 @@ jobs:
         with:
           path: dist
 
+      - name: 校验 Chrome 新标签页扩展构建
+        run: pnpm build:extension
+
+      - name: 上传 Chrome 扩展产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: navigator-newtab-extension
+          path: dist-extension
+
   deploy:
     needs: build
     runs-on: ubuntu-latest

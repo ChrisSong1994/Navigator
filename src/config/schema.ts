@@ -11,6 +11,7 @@
 
 export type ThemeMode = 'system' | 'light' | 'dark'
 export type ViewMode = 'card' | 'list'
+export type SearchEngine = 'google' | 'baidu' | 'bing'
 
 export interface NavLink {
   /** base64 data URL 或图片地址，空串表示使用首字母色块兜底 */
@@ -34,6 +35,8 @@ export interface NavSettings {
   linkCardGap: number
   themeMode: ThemeMode
   viewMode: ViewMode
+  /** 新标签页主搜索框使用的搜索引擎 */
+  searchEngine: SearchEngine
 }
 
 export interface NavConfig {
@@ -53,6 +56,7 @@ export const DEFAULT_SETTINGS: NavSettings = {
   linkCardGap: 16,
   themeMode: 'system',
   viewMode: 'card',
+  searchEngine: 'google',
 }
 
 export const DEFAULT_CONFIG: NavConfig = {
@@ -62,6 +66,7 @@ export const DEFAULT_CONFIG: NavConfig = {
 
 const THEME_MODES: readonly ThemeMode[] = ['system', 'light', 'dark']
 const VIEW_MODES: readonly ViewMode[] = ['card', 'list']
+const SEARCH_ENGINES: readonly SearchEngine[] = ['google', 'baidu', 'bing']
 
 export interface ValidationIssue {
   /** 出问题的配置路径，例如 groups.学习.links[3].href */
@@ -143,6 +148,13 @@ export function parseConfig(input: unknown): ParseResult {
           error('settings.viewMode', `viewMode 只能是 ${VIEW_MODES.join(' / ')}`)
         } else {
           settings.viewMode = raw.viewMode as ViewMode
+        }
+      }
+      if (raw.searchEngine !== undefined) {
+        if (typeof raw.searchEngine !== 'string' || !SEARCH_ENGINES.includes(raw.searchEngine as SearchEngine)) {
+          error('settings.searchEngine', `searchEngine 只能是 ${SEARCH_ENGINES.join(' / ')}`)
+        } else {
+          settings.searchEngine = raw.searchEngine as SearchEngine
         }
       }
     }
@@ -268,6 +280,7 @@ function toCanonical(config: NavConfig) {
       linkCardGap: config.settings.linkCardGap,
       themeMode: config.settings.themeMode,
       viewMode: config.settings.viewMode,
+      searchEngine: config.settings.searchEngine,
     },
     groups,
   }

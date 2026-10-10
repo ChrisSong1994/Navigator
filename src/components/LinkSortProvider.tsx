@@ -1,16 +1,19 @@
 import {
   closestCenter,
   DndContext,
+  DragOverlay,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
 } from '@dnd-kit/core'
-import type { DragEndEvent } from '@dnd-kit/core'
+import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core'
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable'
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useConfig } from '../config/configContext.ts'
+import { LinkSortContext } from './linkSortContext.ts'
+import type { LinkSortSnapshot } from './linkSortContext.ts'
 
 interface SortableLinkData {
   groupId: string
@@ -24,16 +27,28 @@ function readLinkData(data: DragEndEvent['active']['data']['current']): Sortable
   return { groupId, index }
 }
 
+function readLinkId(id: string | number): SortableLinkData | null {
+  const value = String(id)
+  if (!value.startsWith('link:')) return null
+  const [, encodedGroupId, rawIndex] = value.split(':')
+  if (!encodedGroupId || !rawIndex) return null
+  const index = Number(rawIndex)
+  if (!Number.isInteger(index) || index < 0) return null
+  return { groupId: decodeURIComponent(encodedGroupId), index }
+}
+
 /**
  * 页面链接的拖拽容器。
  *
  * 同一个 DndContext 包住全部可见分组，因此卡片和列表都能在同一分组内排序，也能跨分组移动。
- * 搜索时列表只是配置的子集，会通过 sortable=false 关闭拖拽，避免用过滤后的下标改坏真实顺序。
+ * 拖拽过程中只下发 activeId：dnd-kit 自己负责其余条目的位移动画 / over 状态，
+ * 不再因为每次经过一个落点而让所有链接项重渲染。
  */
 export function LinkSortProvider({ sortable, children }: { sortable: boolean; children: ReactNode }) {
   const { moveLinkTo } = useConfig()
   const suppressClickRef = useRef(false)
   const suppressClickTimerRef = useRef<number | null>(null)
+  const [activeId, setActiveId] = useState<string | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -61,8 +76,17 @@ export function LinkSortProvider({ sortable, children }: { sortable: boolean; ch
     }
   }, [])
 
+  const onDragStart = useCallback(({ active }: DragStartEvent) => {
+    setActiveId(String(active.id))
+  }, [])
+
+  const onDragCancel = useCallback(() => {
+    setActiveId(null)
+  }, [])
+
   const onDragEnd = useCallback(
     ({ active, over }: DragEndEvent) => {
+      setActiveId(null)
       // dnd-kit 拖拽结束后浏览器可能仍补一个 click，挡掉这一下，避免顺手跳转。
       suppressClickRef.current = true
       if (suppressClickTimerRef.current !== null) window.clearTimeout(suppressClickTimerRef.current)
@@ -71,8 +95,8 @@ export function LinkSortProvider({ sortable, children }: { sortable: boolean; ch
       }, 400)
 
       if (!sortable || !over) return
-      const from = readLinkData(active.data.current)
-      const to = readLinkData(over.data.current)
+      const from = readLinkData(active.data.current) ?? readLinkId(active.id)
+      const to = readLinkData(over.data.current) ?? readLinkId(over.id)
       if (!from || !to) return
 
       let toIndex = to.index
@@ -91,9 +115,20 @@ export function LinkSortProvider({ sortable, children }: { sortable: boolean; ch
     [moveLinkTo, sortable],
   )
 
+  const value = useMemo<LinkSortSnapshot>(() => ({ activeId }), [activeId])
+
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-      {children}
-    </DndContext>
+    <LinkSortContext.Provider value={value}>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={onDragStart}
+        onDragCancel={onDragCancel}
+        onDragEnd={onDragEnd}
+      >
+        {children}
+        <DragOverlay />
+      </DndContext>
+    </LinkSortContext.Provider>
   )
 }

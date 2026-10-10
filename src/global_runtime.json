@@ -6,7 +6,8 @@
     "linkFontSize": 14,
     "linkCardGap": 16,
     "themeMode": "system",
-    "viewMode": "card"
+    "viewMode": "card",
+    "searchEngine": "google"
   },
   "groups": {
     "default": {

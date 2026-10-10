@@ -75,6 +75,7 @@ function mergeSettings(runtime: NavSettings, local: NavSettings, base: NavSettin
     linkCardGap: pick('linkCardGap'),
     themeMode: pick('themeMode'),
     viewMode: pick('viewMode'),
+    searchEngine: pick('searchEngine'),
   }
 }
 

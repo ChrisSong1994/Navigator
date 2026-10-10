@@ -24,7 +24,7 @@ const test = (name, fn) => {
 
 const link = (href, text, icon = '') => ({ icon, href, text })
 const runtime = {
-  settings: { siteTitle: '内置标题', siteLogo: '', primaryColor: '', linkFontSize: 14, linkCardGap: 16, themeMode: 'system', viewMode: 'card' },
+  settings: { siteTitle: '内置标题', siteLogo: '', primaryColor: '', linkFontSize: 14, linkCardGap: 16, themeMode: 'system', viewMode: 'card', searchEngine: 'google' },
   groups: {
     default: { title: '常用', links: [link('https://a.com', 'A'), link('https://b.com', 'B')] },
     学习: { title: '学习', links: [link('https://c.com', 'C')] },
@@ -96,6 +96,18 @@ test('settings：本地改过的保留，没动过的跟随内置配置', () => 
   assert.equal(config.settings.linkFontSize, 18, '本地改过的字号保留')
   assert.equal(config.settings.linkCardGap, 24, '没动过的间距跟随内置')
   assert.equal(config.settings.siteTitle, '新标题', '本地未覆盖的标题跟随内置')
+})
+
+test('settings：搜索引擎跟随同一套“本地优先、内置增量”规则', () => {
+  const { config: first, meta } = mergeWithRuntime(runtime, null, null)
+  const local = { ...first, settings: { ...first.settings, searchEngine: 'baidu' } }
+  const next = { ...runtime, settings: { ...runtime.settings, searchEngine: 'bing' } }
+  const { config } = mergeWithRuntime(next, local, meta)
+  assert.equal(config.settings.searchEngine, 'baidu', '本地改过的搜索引擎保留')
+
+  const untouchedLocal = { ...first }
+  const untouched = mergeWithRuntime(next, untouchedLocal, meta)
+  assert.equal(untouched.config.settings.searchEngine, 'bing', '没动过的搜索引擎跟随内置')
 })
 
 test('序列化稳定：导出再导入内容与 hash 不变', () => {

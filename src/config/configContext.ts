@@ -1,6 +1,7 @@
 /** 配置 context 与读取 hook（与 Provider 分文件，保持 fast refresh 友好） */
 import { createContext, useContext } from 'react'
 import type { NavConfig, NavGroup, NavLink, NavSettings } from './schema.ts'
+import type { StorageArea } from './storage.ts'
 
 /** 上传文件的落地方式：合并进现有配置，还是整份替换 */
 export type ImportMode = 'merge' | 'replace'
@@ -32,6 +33,10 @@ export interface ConfigContextValue {
   /** 内置配置有更新被合并进来（首次用内置配置初始化时不算） */
   mergeNotice: boolean
   storageError: string | null
+  /** 扩展环境为 sync，普通网页为 local */
+  storageMode: StorageArea
+  /** chrome.storage 异步初始化是否完成；localStorage 环境恒为 true */
+  storageReady: boolean
   dismissMergeNotice: () => void
   updateSettings: (patch: Partial<NavSettings>) => void
   /** 新建分组，返回新分组 id（不传标题则用「新分组 N」） */

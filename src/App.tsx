@@ -10,9 +10,10 @@ import {
 } from "antd";
 import { App as AntApp, ConfigProvider as AntConfigProvider } from "antd";
 import zhCN from "antd/locale/zh_CN";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppHeader } from "./components/AppHeader.tsx";
 import { ConfigDrawer } from "./components/ConfigDrawer.tsx";
+import { GlobalSearch } from "./components/GlobalSearch.tsx";
 import { GroupToc } from "./components/GroupToc.tsx";
 import { LinkFormModal } from "./components/LinkFormModal.tsx";
 import { LinkSortProvider } from "./components/LinkSortProvider.tsx";
@@ -39,6 +40,16 @@ function ThemedShell() {
   const { settings } = useConfig();
   const resolvedTheme = useResolvedTheme(settings.themeMode);
   const accent = settings.primaryColor || DEFAULT_PRIMARY_COLOR;
+  const antdThemeConfig = useMemo(
+    () => ({
+      algorithm:
+        resolvedTheme === "dark"
+          ? antdTheme.darkAlgorithm
+          : antdTheme.defaultAlgorithm,
+      token: { colorPrimary: accent, borderRadius: 8 },
+    }),
+    [accent, resolvedTheme],
+  );
 
   useEffect(() => {
     document.documentElement.style.setProperty("--spirit-accent", accent);
@@ -47,13 +58,7 @@ function ThemedShell() {
   return (
     <AntConfigProvider
       locale={zhCN}
-      theme={{
-        algorithm:
-          resolvedTheme === "dark"
-            ? antdTheme.darkAlgorithm
-            : antdTheme.defaultAlgorithm,
-        token: { colorPrimary: accent, borderRadius: 8 },
-      }}
+      theme={antdThemeConfig}
     >
       <AntApp>
         <Page />
@@ -99,6 +104,8 @@ function NewGroupModal({ onClose }: { onClose: () => void }) {
 function Page() {
   const { settings, groups, groupIds } = useConfig();
   const [keyword, setKeyword] = useState("");
+  const [filterKeyword, setFilterKeyword] = useState("");
+  const filterTimerRef = useRef<number | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [activeGroupId, setActiveGroupId] = useState<string | null>(
     groupIds[0] ?? null,
@@ -111,8 +118,23 @@ function Page() {
     document.title = settings.siteTitle;
   }, [settings.siteTitle]);
 
+  // 搜索框保持即时输入；过滤放到下一帧空闲时段，避免输入时同步遍历全部链接。
+  useEffect(() => {
+    if (filterTimerRef.current !== null) window.clearTimeout(filterTimerRef.current);
+    filterTimerRef.current = window.setTimeout(() => {
+      filterTimerRef.current = null;
+      setFilterKeyword(keyword);
+    }, 120);
+    return () => {
+      if (filterTimerRef.current !== null) {
+        window.clearTimeout(filterTimerRef.current);
+        filterTimerRef.current = null;
+      }
+    };
+  }, [keyword]);
+
   const visibleGroups = useMemo(() => {
-    const query = keyword.trim().toLowerCase();
+    const query = filterKeyword.trim().toLowerCase();
     const entries = groupIds.map((id) => [id, groups[id]] as const);
     if (!query) return entries;
     return entries
@@ -123,9 +145,9 @@ function Page() {
         return [id, { ...group, links: matched }] as const;
       })
       .filter(([, group]) => group.links.length > 0);
-  }, [groupIds, groups, keyword]);
+  }, [groupIds, groups, filterKeyword]);
 
-  const hasKeyword = keyword.trim().length > 0;
+  const hasKeyword = filterKeyword.trim().length > 0;
   const total = visibleGroups.reduce(
     (sum, [, group]) => sum + group.links.length,
     0,
@@ -192,6 +214,9 @@ function Page() {
         />
 
         <div className="min-w-0 flex-1">
+          <div className="mb-5 px-0 pt-1">
+            <GlobalSearch />
+          </div>
           {hasKeyword && (
             <p className="mb-4 text-xs text-[var(--spirit-muted)]">
               匹配到 {total} 条链接
@@ -207,7 +232,7 @@ function Page() {
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
                 description={
                   hasKeyword
-                    ? `没有匹配「${keyword.trim()}」的链接`
+                    ? `没有匹配「${filterKeyword.trim()}」的链接`
                     : "还没有配置任何链接"
                 }
               />
@@ -249,6 +274,7 @@ function Page() {
                   ) : (
                     <LinkGroupView
                       groupId={id}
+                      groupTitle={group.title}
                       links={group.links}
                       card={settings.viewMode === "card"}
                       fontSize={settings.linkFontSize}
@@ -276,7 +302,9 @@ function Page() {
       </main>
 
       <FloatButton.BackTop style={{ insetInlineEnd: 28, insetBlockEnd: 28 }} />
-      <ConfigDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      {drawerOpen && (
+        <ConfigDrawer open onClose={() => setDrawerOpen(false)} />
+      )}
       {addingTo && groups[addingTo] && (
         <LinkFormModal
           groupId={addingTo}

@@ -1,6 +1,13 @@
-import { SearchOutlined, SettingOutlined } from "@ant-design/icons";
+import {
+  GithubOutlined,
+  SearchOutlined,
+  SettingOutlined,
+} from "@ant-design/icons";
 import { Button, Input, Tooltip } from "antd";
 import { useConfig } from "../config/configContext.ts";
+
+const REPOSITORY_URL = "https://github.com/ChrisSong1994/Navigator";
+const RELEASES_URL = `${REPOSITORY_URL}/releases`;
 
 interface AppHeaderProps {
   keyword: string;
@@ -14,7 +21,8 @@ export function AppHeader({
   onKeywordChange,
   onOpenSettings,
 }: AppHeaderProps) {
-  const { settings, groupIds, linkCount } = useConfig();
+  const { settings, groupIds, linkCount, storageMode } = useConfig();
+  const isExtension = storageMode === "sync";
 
   return (
     <header className="sticky top-0 z-30 border-b border-[var(--spirit-border)] bg-[var(--spirit-surface)]/90 backdrop-blur-xl">
@@ -40,6 +48,26 @@ export function AppHeader({
             placeholder="搜索链接或分组"
             className="w-[240px]"
           />
+          {!isExtension && (
+            <Button
+              type="text"
+              href={RELEASES_URL}
+              target="_blank"
+              rel="noreferrer noopener"
+            >
+              去安装插件
+            </Button>
+          )}
+          <Tooltip title="GitHub 仓库">
+            <Button
+              type="text"
+              icon={<GithubOutlined />}
+              href={REPOSITORY_URL}
+              target="_blank"
+              rel="noreferrer noopener"
+              aria-label="GitHub 仓库"
+            />
+          </Tooltip>
           <Tooltip title="配置面板">
             <Button icon={<SettingOutlined />} onClick={onOpenSettings} />
           </Tooltip>

@@ -1,0 +1,54 @@
+name: Release Browser Extension
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 校验扩展版本
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          MANIFEST_VERSION="$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' public/manifest.json | head -n 1)"
+          echo "release tag: ${GITHUB_REF_NAME}, manifest version: ${MANIFEST_VERSION}"
+          if [ "${VERSION}" != "${MANIFEST_VERSION}" ]; then
+            echo "::error::public/manifest.json 的 version (${MANIFEST_VERSION}) 必须与 tag ${GITHUB_REF_NAME} 一致"
+            exit 1
+          fi
+
+      - name: 构建 Chrome / Edge 扩展
+        run: pnpm build:extension
+
+      - name: 打包扩展
+        run: |
+          ARCHIVE="navigator-newtab-extension-${GITHUB_REF_NAME}.zip"
+          (cd dist-extension && zip -r "../${ARCHIVE}" .)
+          sha256sum "${ARCHIVE}" > "${ARCHIVE}.sha256"
+
+      - name: 发布到 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            navigator-newtab-extension-${{ github.ref_name }}.zip
+            navigator-newtab-extension-${{ github.ref_name }}.zip.sha256

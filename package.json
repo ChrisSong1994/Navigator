@@ -11,6 +11,7 @@
     "check": "pnpm lint && pnpm check:merge && pnpm refresh --check",
     "refresh": "node scripts/refresh.mjs",
     "import:bookmarks": "node scripts/import-bookmarks.mjs",
+    "build:extension": "tsc -b && vite build && node scripts/build-extension.mjs",
     "check:merge": "node scripts/check-merge.mjs"
   },
   "dependencies": {
@@ -24,6 +25,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
+    "@types/chrome": "^0.1.31",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",

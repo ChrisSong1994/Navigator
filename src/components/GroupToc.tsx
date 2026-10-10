@@ -2,6 +2,7 @@ import { closestCenter, DndContext, KeyboardSensor, PointerSensor, useSensor, us
 import type { DragEndEvent } from '@dnd-kit/core'
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import { memo } from 'react'
 import { useConfig } from '../config/configContext.ts'
 import type { NavGroup } from '../config/schema.ts'
 
@@ -65,7 +66,7 @@ function TocItem({
 }
 
 /** 文档式分组目录：桌面端固定在内容左侧；窄屏不展示（顶栏的菜单按钮与左侧抽屉已移除） */
-export function GroupToc({ groupIds, groups, activeGroupId, onNavigate, className = '' }: GroupTocProps) {
+export const GroupToc = memo(function GroupToc({ groupIds, groups, activeGroupId, onNavigate, className = '' }: GroupTocProps) {
   const { setGroupOrder } = useConfig()
   const sortable = groupIds.length === Object.keys(groups).length
   const sensors = useSensors(
@@ -117,4 +118,4 @@ export function GroupToc({ groupIds, groups, activeGroupId, onNavigate, classNam
       </DndContext>
     </aside>
   )
-}
+})

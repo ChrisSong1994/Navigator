@@ -1,8 +1,8 @@
 /**
- * 配置状态：内置配置 + localStorage 合并后，向页面提供配置与全部编辑动作。
- * 所有改动都会即时写回 localStorage（防抖 300ms）。
+ * 配置状态：内置配置 + 浏览器持久化存储合并后，向页面提供配置与全部编辑动作。
+ * 扩展环境写入 chrome.storage.sync（跨设备）；普通网页开发环境写入 localStorage。
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { ConfigContext } from './configContext.ts'
 import type { ConfigContextValue, ImportMode, ImportPayload, ImportResult } from './configContext.ts'
@@ -11,7 +11,7 @@ import type { LocalMeta } from './merge.ts'
 import { RUNTIME_CONFIG } from './runtime.ts'
 import { parseConfig } from './schema.ts'
 import type { NavConfig, NavGroup, NavLink, NavSettings } from './schema.ts'
-import { clearLocal, exportBookmarksFile, exportConfigFile, loadLocal, saveLocal } from './storage.ts'
+import { clearSnapshot, exportBookmarksFile, exportConfigFile, loadLocal, loadSnapshot, onStorageChange, saveSnapshot, storageMode } from './storage.ts'
 
 interface ConfigState {
   config: NavConfig
@@ -36,29 +36,95 @@ function moveInRecord(groups: Record<string, NavGroup>, id: string, offset: -1 |
   return Object.fromEntries(moveInArray(entries, index, offset))
 }
 
-function initialState(): ConfigState {
-  const { config: local, meta } = loadLocal()
+function mergeInitial(local: NavConfig | null, meta: LocalMeta | null): ConfigState {
   const result = mergeWithRuntime(RUNTIME_CONFIG, local, meta)
   // 本地空 → 用内置配置初始化，不算"合并"，不打扰用户
   return { config: result.config, meta: result.meta, notice: local !== null && result.merged }
 }
 
+function initialState(): ConfigState {
+  const snapshot = loadLocal()
+  return mergeInitial(snapshot.config, snapshot.meta)
+}
+
 export function ConfigProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<ConfigState>(initialState)
   const [storageError, setStorageError] = useState<string | null>(null)
+  const storageKind = storageMode()
+  const [storageReady, setStorageReady] = useState(() => storageKind === 'local')
   const { config, meta } = state
+  // 保存状态只按引用判断：配置是 immutable 更新，同一份状态重复渲染不会重复写。
+  // 以前这里每次 render 都全量 serializeConfig，属于明显的输入 / 拖拽卡顿来源。
+  const lastSavedRef = useRef({ config, meta })
+  const dirtyRef = useRef(false)
+  const saveGenerationRef = useRef(0)
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
 
   useEffect(() => {
+    if (storageKind === 'local') return
+    let cancelled = false
+    void loadSnapshot()
+      .then((snapshot) => {
+        if (cancelled) return
+        const next = mergeInitial(snapshot.config, snapshot.meta)
+        lastSavedRef.current = { config: next.config, meta: next.meta }
+        dirtyRef.current = false
+        setState(next)
+        setStorageReady(true)
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return
+        setStorageError(`配置读取 chrome.storage.sync 失败：${(error as Error).message}`)
+        setStorageReady(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [storageKind])
+
+  useEffect(() => {
+    if (storageKind === 'local') return
+    return onStorageChange(({ snapshot }) => {
+      // 本机还有未落盘的改动时以本机为准，避免远端事件把正在编辑的内容顶掉。
+      if (!snapshot || dirtyRef.current) return
+      const next = mergeInitial(snapshot.config, snapshot.meta)
+      lastSavedRef.current = { config: next.config, meta: next.meta }
+      setState(next)
+    })
+  }, [storageKind])
+
+  useEffect(() => {
+    // 扩展存储是异步的：初始化完成前先不写默认值，避免把已有的同步配置覆盖掉。
+    if (!storageReady) {
+      dirtyRef.current = false
+      return
+    }
+    const saved = lastSavedRef.current
+    if (config === saved.config && meta === saved.meta) {
+      dirtyRef.current = false
+      return
+    }
+
+    dirtyRef.current = true
+    const generation = ++saveGenerationRef.current
     const timer = setTimeout(() => {
-      try {
-        saveLocal(config, meta)
-        setStorageError(null)
-      } catch (error) {
-        setStorageError(`配置写入浏览器本地存储失败：${(error as Error).message}`)
-      }
+      const task = () => saveSnapshot(config, meta)
+      const queued = saveQueueRef.current.then(task, task)
+      // 保持串行写入；错误在下面的 queued 上单独处理，不让队列永久 rejected。
+      saveQueueRef.current = queued.catch(() => undefined)
+      void queued
+        .then(() => {
+          if (generation !== saveGenerationRef.current) return
+          lastSavedRef.current = { config, meta }
+          dirtyRef.current = false
+          setStorageError(null)
+        })
+        .catch((error: unknown) =>
+          setStorageError(`配置写入 ${storageKind === 'sync' ? 'chrome.storage.sync' : 'localStorage'} 失败：${(error as Error).message}`),
+        )
     }, 300)
     return () => clearTimeout(timer)
-  }, [config, meta])
+  }, [config, meta, storageReady, storageKind])
 
   const mutateGroups = useCallback(
     (
@@ -287,8 +353,15 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const resetToRuntime = useCallback(() => {
-    clearLocal()
-    setState({ config: RUNTIME_CONFIG, meta: createMeta(RUNTIME_CONFIG), notice: true })
+    const next = { config: RUNTIME_CONFIG, meta: createMeta(RUNTIME_CONFIG), notice: true }
+    // 先清掉已保存快照，再切回内置配置；下一次防抖写会把干净的默认态写到 storage。
+    void clearSnapshot()
+      .then(() => {
+        lastSavedRef.current = { config: next.config, meta: next.meta }
+        dirtyRef.current = false
+        setState(next)
+      })
+      .catch((error: unknown) => setStorageError(`恢复内置配置失败：${(error as Error).message}`))
   }, [])
 
   const value = useMemo<ConfigContextValue>(
@@ -300,6 +373,8 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       linkCount: Object.values(config.groups).reduce((total, group) => total + group.links.length, 0),
       mergeNotice: state.notice,
       storageError,
+      storageMode: storageKind,
+      storageReady,
       dismissMergeNotice: () => setState((prev) => ({ ...prev, notice: false })),
       updateSettings,
       addGroup,
@@ -322,6 +397,8 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       config,
       state.notice,
       storageError,
+      storageKind,
+      storageReady,
       updateSettings,
       addGroup,
       renameGroup,

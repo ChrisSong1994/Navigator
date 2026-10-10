@@ -9,36 +9,37 @@ import { useConfig } from '../config/configContext.ts'
 import type { NavLink } from '../config/schema.ts'
 import { LinkFormModal } from './LinkFormModal.tsx'
 import { LinkIcon } from './LinkIcon.tsx'
+import { linkSortableId } from './linkSort.ts'
+import { useLinkSortSnapshot } from './linkSortContext.ts'
 
 interface LinkItemProps {
   link: NavLink
   groupId: string
+  groupTitle: string
   index: number
   fontSize: number
   card: boolean
   /** 搜索过滤时列表只是子集，关闭拖拽，避免用过滤后的下标改坏真实顺序 */
   sortable: boolean
+  onRemove: (groupId: string, href: string) => void
 }
 
-function linkSortableId(groupId: string, index: number) {
-  return `link:${encodeURIComponent(groupId)}:${index}`
-}
-
-function LinkItemBase({ link, groupId, index, fontSize, card, sortable }: LinkItemProps) {
-  const { groups, removeLink } = useConfig()
+function LinkItemBase({ link, groupId, groupTitle, index, fontSize, card, sortable, onRemove }: LinkItemProps) {
   const { modal } = App.useApp()
+  const { activeId } = useLinkSortSnapshot()
   const [menuOpen, setMenuOpen] = useState(false)
   const [contextOpen, setContextOpen] = useState(false)
   const [editing, setEditing] = useState(false)
 
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging, isOver } = useSortable({
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: linkSortableId(groupId, index),
     data: { groupId, index },
     disabled: !sortable,
     transition: { duration: 180, easing: 'ease' },
   })
 
-  const group = groups[groupId]
+  const sortableId = linkSortableId(groupId, index)
+  const isDragged = activeId === sortableId
 
   const menuItems: MenuProps['items'] = [
     { key: 'edit', icon: <EditOutlined />, label: '编辑' },
@@ -56,13 +57,13 @@ function LinkItemBase({ link, groupId, index, fontSize, card, sortable }: LinkIt
         okText: '删除',
         okType: 'danger',
         cancelText: '取消',
-        onOk: () => removeLink(groupId, link.href),
+        onOk: () => onRemove(groupId, link.href),
       })
     }
   }
 
   const onClick = (event: ReactMouseEvent<HTMLAnchorElement>) => {
-    if (!isDragging) return
+    if (!isDragged) return
     event.preventDefault()
     event.stopPropagation()
   }
@@ -75,8 +76,8 @@ function LinkItemBase({ link, groupId, index, fontSize, card, sortable }: LinkIt
       : 'flex items-center gap-3 py-2.5 pl-3.5 pr-11 text-[var(--spirit-text)] no-underline transition-colors hover:bg-[var(--spirit-inset-hover)] hover:text-[var(--spirit-text)]',
     'select-none',
     sortable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
-    // 落点高亮画在框内，分组间距调小时也不会压到相邻的卡片
-    isOver && !isDragging ? 'ring-2 ring-inset ring-[var(--spirit-accent)]' : '',
+    // 拖拽落点由 dnd-kit 的位移反馈，避免每次 over 变化都触发整组重渲染
+    isDragging ? 'opacity-60 ring-2 ring-inset ring-[var(--spirit-accent)]' : '',
   ]
     .filter(Boolean)
     .join(' ')
@@ -85,8 +86,8 @@ function LinkItemBase({ link, groupId, index, fontSize, card, sortable }: LinkIt
     <Dropdown trigger={['contextMenu']} menu={{ items: menuItems, onClick: onMenuClick }} open={contextOpen} onOpenChange={setContextOpen}>
       <div
         ref={setNodeRef}
-        style={{ transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 20 : undefined }}
-        className={`group/nav relative ${isDragging ? 'opacity-40' : ''}`}
+        style={{ transform: CSS.Transform.toString(transform), transition, zIndex: isDragged ? 20 : undefined }}
+        className={`group/nav relative ${isDragged ? 'opacity-40' : ''}`}
       >
         <a
           {...attributes}
@@ -129,7 +130,7 @@ function LinkItemBase({ link, groupId, index, fontSize, card, sortable }: LinkIt
           </Dropdown>
         </div>
 
-        {editing && group && <LinkFormModal groupId={groupId} groupTitle={group.title} link={link} onClose={() => setEditing(false)} />}
+        {editing && <LinkFormModal groupId={groupId} groupTitle={groupTitle} link={link} onClose={() => setEditing(false)} />}
       </div>
     </Dropdown>
   )
@@ -139,6 +140,7 @@ export const LinkItem = memo(LinkItemBase)
 
 interface LinkGroupViewProps {
   groupId: string
+  groupTitle: string
   links: NavLink[]
   card: boolean
   fontSize: number
@@ -147,7 +149,8 @@ interface LinkGroupViewProps {
 }
 
 /** 卡片模式：自适应网格；列表模式：一整个面板内分行 */
-export function LinkGroupView({ groupId, links, card, fontSize, gap, sortable }: LinkGroupViewProps) {
+export const LinkGroupView = memo(function LinkGroupView({ groupId, groupTitle, links, card, fontSize, gap, sortable }: LinkGroupViewProps) {
+  const { removeLink } = useConfig()
   const sortableIds = links.map((_, index) => linkSortableId(groupId, index))
 
   const content = card ? (
@@ -156,14 +159,14 @@ export function LinkGroupView({ groupId, links, card, fontSize, gap, sortable }:
       style={{ gap, gridTemplateColumns: `repeat(auto-fill, minmax(${Math.max(168, fontSize * 13)}px, 1fr))` }}
     >
       {links.map((link, index) => (
-        <LinkItem key={`${link.href}-${index}`} link={link} groupId={groupId} index={index} fontSize={fontSize} card sortable={sortable} />
+        <LinkItem key={`${link.href}-${index}`} link={link} groupId={groupId} groupTitle={groupTitle} index={index} fontSize={fontSize} card sortable={sortable} onRemove={removeLink} />
       ))}
     </div>
   ) : (
     <div className="overflow-hidden rounded-xl bg-[var(--spirit-inset)]">
       {links.map((link, index) => (
         <div key={`${link.href}-${index}`} className={index > 0 ? 'border-t border-[var(--spirit-border)]' : undefined}>
-          <LinkItem link={link} groupId={groupId} index={index} fontSize={fontSize} card={false} sortable={sortable} />
+          <LinkItem link={link} groupId={groupId} groupTitle={groupTitle} index={index} fontSize={fontSize} card={false} sortable={sortable} onRemove={removeLink} />
         </div>
       ))}
     </div>
@@ -174,4 +177,4 @@ export function LinkGroupView({ groupId, links, card, fontSize, gap, sortable }:
       {content}
     </SortableContext>
   )
-}
+})

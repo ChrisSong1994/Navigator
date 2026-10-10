@@ -1,8 +1,18 @@
 # 导航精灵
 
-一个静态的链接导航页：数据来自一份可手工编辑的源配置，构建时解析成运行时配置，运行时落到浏览器本地存储，随时可以在页面右侧的配置面板里改，并导出 / 导入 JSON。
+一个可安装为 **Chrome / Edge 新标签页插件**的链接导航主页：配置来自一份可手工编辑的源文件，构建时解析成运行时配置；运行时整份配置同步到 Chrome 用户同步存储，也可以在页面右侧配置面板里修改、导入导出。
 
 技术栈：Vite + React 19 + TypeScript + Ant Design 6 + Tailwind CSS 4。
+
+## 功能
+
+- Chrome 新标签页：`chrome_url_overrides.newtab` 指向构建产物 `index.html`
+- 跨设备配置同步：整个 `{ settings, groups }` 通过 `chrome.storage.sync` 分片持久化，同一 Chrome 账号自动同步
+- 全局搜索：Google / 百度 / 必应，支持搜索联想、`Cmd/Ctrl+K` 和 `/` 快捷键
+- 链接导航：卡片 / 列表两种展示、明暗模式跟随系统、分组目录、拖拽排序
+- 配置面板：标题 / Logo / 主题 / 主色 / 字号 / 间距 / 展示模式 / 搜索引擎 / 分组与链接增删改
+- Chrome 书签双向同步：手动从书签栏 /「导航精灵」拉取，或把当前配置推送 / 覆盖到书签栏下的「导航精灵」文件夹
+- 数据导入导出：标准配置 JSON，以及 Chrome 书签 HTML
 
 ## 数据流
 
@@ -14,143 +24,135 @@ chrome_bookmarks_demo.html ──pnpm import:bookmarks──▶ global_original.
                                                             ▼
                                                    src/global_runtime.json    （内置运行时配置，随前端一起构建）
                                                             │
-                                                      页面首次打开
-                                                            │  按 id 合并，本地优先
-                                                            ▼
-                                       localStorage「navigator:config」        （可在配置面板里修改、导出、导入）
+                                                        页面运行时
+                                                            │
+                        内置配置 + chrome.storage.sync / localStorage 合并 ◀──▶ 配置面板
 ```
 
-三处结构完全一致（`settings` + `groups`），导出的 JSON 可以直接拿去替换 `global_original.json5`。
-
-## 命令
-
-| 命令 | 说明 |
-| --- | --- |
-| `pnpm dev` | 本地开发 |
-| `pnpm build` | 类型检查 + 构建（`dist/`） |
-| `pnpm preview` | 预览构建产物 |
-| `pnpm refresh` | 解析 `global_original.json5` → `src/global_runtime.json`，并校验配置格式 |
-| `pnpm refresh --check` | 只校验（含"运行时配置是否已同步"），CI 用 |
-| `pnpm import:bookmarks` | Chrome 书签导出 → `global_original.json5`（见下方参数） |
-| `pnpm check:merge` | 跑合并规则的冒烟测试（纯 node，无需浏览器） |
-| `pnpm lint` | oxlint |
-
-`pnpm import:bookmarks` 的可选参数：
-
-- `--no-icons`：丢弃 base64 图标（配置体积从约 1 MB 降到约 150 KB，页面用首字母色块兜底）
-- `--input <file>` / `--output <file>`：指定输入输出路径
-- `--dry-run`：只打印统计
-
-转换规则：书签栏里的直接链接 + 顶层游离链接归入 `default`（标题「常用」），每个子文件夹递归成为一个分组，
-id 是相对书签栏的路径（如 `学习/刷题`），标题是 `学习 / 刷题`；空文件夹不会生成空分组。
-
-## 配置格式
+`global_original.json5`、`src/global_runtime.json`、同步快照和导出的 JSON 结构一致：
 
 ```json5
 {
   settings: {
-    siteTitle: "导航精灵",
-    siteLogo: "",          // 站点 Logo：base64 data URL 或图片地址，留空则不显示
-    primaryColor: "",      // 留空 = 内置默认主色 #2f54eb
-    linkFontSize: 14,      // 链接字号 12~20
-    linkCardGap: 16,       // 卡片之间 / 列表行之间的间距 4~48
-    themeMode: "system",   // system | light | dark
-    viewMode: "card",      // card | list
+    siteTitle: '导航精灵',
+    siteLogo: '',
+    primaryColor: '',
+    linkFontSize: 14,
+    linkCardGap: 16,
+    themeMode: 'system', // system | light | dark
+    viewMode: 'card',    // card | list
+    searchEngine: 'google' // google | baidu | bing
   },
   groups: {
-    default: {
-      title: "常用",
-      links: [
-        // icon 为 base64 data URL 或图片地址，留空则用首字母色块
-        { icon: "", href: "https://github.com/", text: "GitHub" },
-      ],
-    },
-  },
+    常用: {
+      title: '常用',
+      links: [{ icon: '', href: 'https://github.com', text: 'GitHub' }]
+    }
+  }
 }
 ```
 
-- 分组 id 就是 `groups` 的 key，也是合并时的对齐依据，改名不会丢数据（改 key 会被当成新分组）。
-- `title` 必填；`links[].href`、`links[].text` 必填且非空，`icon` 可空。
-- 校验失败时 `pnpm refresh` 会打印带路径的错误（如 `groups.学习.links[3].href: href 必须是非空字符串`）并以非 0 退出，不会写出坏配置。
+执行 `pnpm refresh` 会校验 `global_original.json5` 并生成 `src/global_runtime.json`；页面运行时以内置配置为底、本地 / 同步配置优先做合并。
 
-## 合并规则（内置配置 ↔ 本地存储）
+## 配置同步
 
-页面打开时比对内置配置的 hash：
+- 扩展环境使用 `chrome.storage.sync`，整份配置与合并记账（墓碑等）都会同步；由于单 key 有 8 KB 限制，会自动拆成多个分片。
+- `chrome.storage.local` 保存同设备的完整快照，sync 暂时不可用或分片写入中断时作为兜底。
+- 普通 `pnpm dev` / 非扩展网页环境自动回退到 `localStorage`，方便本地开发。
+- `chrome.storage.sync` 总配额约 100 KB，且浏览器可能按设备 / 登录状态产生延迟；不建议在配置里放大量 base64 图片。配置面板上传时可取消“保留 base64 图标”。
+- Chrome 书签只是手动双向同步入口，完整配置、外观设置和合并元数据仍以 `chrome.storage.sync` 为准。
 
-1. 本地还没有配置 → 直接用内置配置初始化；
-2. 内置配置没变 → 本地就是唯一真相；
-3. 内置配置变了 → 合并，**本地权重最高**：
-   - `settings`：本地改过的保留，没动过的跟随内置配置；
-   - `groups`：以本地为骨架，内置配置里**新增的分组 / 新增的链接**并入（链接追加到分组末尾）；
-   - 本地删掉的分组 / 链接记在墓碑里，不会被内置配置"复活"。
+## 搜索
 
-配置面板「数据」页提供「重新合并内置配置」（恢复内置配置里删掉的内容，保留本地改动）与「恢复内置配置」（清空本地）。
+顶部主搜索框使用配置里的 `settings.searchEngine`（默认 Google）：
+
+- 输入内容后 Enter / 点击搜索按钮 → 新窗口打开搜索结果
+- 输入 `https://...` 或裸域名 → 直接打开对应网址
+- 输入时显示搜索引擎联想词，支持上下方向键与 Enter
+- `Cmd/Ctrl+K` 或 `/` 聚焦搜索框
+
+联想请求在扩展环境经 `service_worker.js` 代理，避免页面跨域限制；普通网页环境尝试直接请求，失败时静默降级为普通搜索。
+
+## 构建为 Chrome 扩展
+
+```bash
+pnpm install
+pnpm build:extension
+```
+
+打开 `chrome://extensions` → 开启右上角“开发者模式” → “加载已解压的扩展程序” → 选择项目下的 `dist-extension/` 目录。之后新建标签页就会使用导航精灵。
+
+`pnpm build:extension` 会运行类型检查和生产构建，并复制 `public/manifest.json`、`public/service_worker.js` 与图标到 `dist-extension/`。扩展构建固定使用根路径 `/`，不会继承 GitHub Pages 的子路径。
+
+## 本地开发
+
+```bash
+pnpm dev
+```
+
+普通网页开发环境使用 `localStorage` 持久化，配置面板行为与扩展一致；搜索联想受浏览器 CORS 限制时仍可使用普通搜索。
+
+## 数据流与合并规则
+
+1. 首次访问：同步存储为空 → 用 `src/global_runtime.json` 初始化；
+2. 内置配置没变：同步 / 本地配置就是唯一真相；
+3. 内置配置变了 → 合并，**同步 / 本地权重最高**：
+   - `settings`：用户改过的保留，没动过的跟随内置配置；
+   - `groups`：以本地为骨架，内置新增的分组 / 链接追加并入；
+   - 本地删掉的分组 / 链接记在墓碑里，不会被内置配置“复活”。
+
+配置面板「数据」页提供「重新合并内置配置」（恢复内置里删掉的内容，保留本地改动）与「恢复内置配置」（清除同步配置并回到内置态）。
+
+### 与 Chrome 书签手动双向同步
+
+扩展环境的数据页提供两个手动操作：
+
+- **从 Chrome 书签拉取**：若书签栏下存在「导航精灵」文件夹，只读取它；否则读取整个书签栏。拉取结果进入和文件导入相同的预览弹窗，可合并或全部替换。
+- **推送到 Chrome 书签**：只重建书签栏下的「导航精灵」文件夹，其他书签不会改动。`default` / 常用分组的链接放在根目录，其他分组按标题中的 ` / ` 展开为多级文件夹。
+- 只能写入 `http(s)` 链接，相对链接 / 浏览器内部链接会在推送时跳过并提示。
+- 第一次先点“推送”会创建「导航精灵」；此后拉取只读取这个受管文件夹，不会把用户自己的其他书签混入配置。
 
 ## 上传配置文件 / 书签
 
-「数据」页的拖拽区可以上传两类文件，解析都走同一套逻辑（书签 HTML 与 `pnpm import:bookmarks` 共用
-`src/config/bookmarks.ts`），上传时选择落地方式：
+「数据」页的拖拽区可以上传两类文件，解析都走同一套逻辑（书签 HTML 与 `pnpm import:bookmarks` 共用 `src/config/bookmarks.ts`）：
 
 - **标准配置 JSON**：与导出文件、`src/global_runtime.json` 同结构；
 - **Chrome 书签导出 HTML**：转换规则同 `pnpm import:bookmarks`。
 
 | 落地方式 | 行为 |
 | --- | --- |
-| **合并** | 先按分组 id 对齐（改过名也认），id 对不上再按标题对齐同名分组，都对不上才作为新分组追加到末尾。链接按 `href` 去重后追加，现有链接的位置、顺序、标题一律不动；`settings` 不受影响。导入回来的分组 / 链接会解除对应的删除记录，否则下次内置配置变动时会被当成"本地删过"而丢掉。 |
-| **全部替换** | 整份替换分组，JSON 文件里的 `settings` 一并采用（书签 HTML 没有 `settings`，保留当前设置）。内置配置里被替换掉的分组 / 链接会记入墓碑，之后内置配置变动不会把它们并回来；想找回内置内容用「重新合并内置配置」。 |
-
-预览会显示解析出的分组 / 链接数、其中多少条带图标、以及写入本地存储的大约体积。base64 图标是体积大头
-（约 1 MB vs 约 150 KB），不勾选「保留 base64 图标」则丢弃图标、用首字母色块兜底。
+| **合并** | 先按分组 id 对齐（改过名也认），id 对不上再按标题对齐同名分组，都对不上才作为新分组追加到末尾。链接按 `href` 去重后追加，现有链接的位置、顺序、标题一律不动；`settings` 不受影响。 |
+| **全部替换** | 整份替换分组，JSON 文件里的 `settings` 一并采用（书签 HTML 没有 `settings`，保留当前设置）。内置里被替换掉的分组 / 链接会记入墓碑。 |
 
 ## 导出
-
-「数据」页有两个导出按钮，都是把当前配置（含浏览器里的改动）下载成文件：
 
 | 按钮 | 产物 |
 | --- | --- |
 | **导出 JSON** | 标准配置 JSON，可直接替换 `global_original.json5`，也可以再上传回来 |
-| **导出 Chrome 书签** | Chrome 书签格式（`NETSCAPE-Bookmark-file-1`）的 `.html`，在 Chrome 的**书签管理器 → 导入书签和设置**里选它即可导入 |
+| **导出 Chrome 书签** | Chrome 书签格式（`NETSCAPE-Bookmark-file-1`）的 `.html`，可在 Chrome 的书签管理器里导入 |
 
-书签导出是解析的反向操作（同一份 `src/config/bookmarks.ts`）：分组标题按 ` / ` 拆成文件夹层级（所以
-`学习 / 刷题` 会变成「学习 > 刷题」两层），id 为 `default` 的那一组写成书签栏的直属链接，空分组不写出空
-文件夹。`renderBookmarksHtml(parseBookmarksHtml(x).groups)` 与 `x` 在 `pnpm check:merge` 里有往返断言，
-拿仓库里的 `chrome_bookmarks_demo.html`（30 条链接 / 3 个分组）实测逐字节一致。
+## 部署 GitHub Pages
 
-不写 `ADD_DATE` / `LAST_MODIFIED`：配置里没有这两个时间，凭空写"现在"会让 Chrome 里所有书签的添加时间
-都变成同一刻，不如交给 Chrome 按导入时间自己处理。
-
-本地存储用两个 key：
-
-- `navigator:config`：配置本体，结构与 JSON 文件完全一致
-- `navigator:meta`：合并记账（内置配置 hash、墓碑），不参与导出
-
-## 部署
-
-`.github/workflows/deploy.yml`：main 分支推送后自动
-
-1. `pnpm refresh` 校验并刷新 `src/global_runtime.json`（校验失败直接中断，不会发布坏配置）；
-2. 若运行时配置有变化，以 `[skip ci]` 提交回 main（可用 `contents` 权限，不会形成循环）；
-3. 跑合并规则测试 + lint，`VITE_BASE_PATH=/<仓库名>/` 构建；
-4. 上传并部署到 GitHub Pages。
+`.github/workflows/deploy.yml`：main 分支推送后自动执行 `pnpm refresh`、合并规则测试、lint，并用 `VITE_BASE_PATH=/<仓库名>/` 构建部署到 GitHub Pages。
 
 首次使用需要在仓库 **Settings → Pages → Source** 选择 **GitHub Actions**。
 
-## 页面功能
+## 常用命令
 
-- 顶部：站点标题与统计、链接 / 分组搜索、卡片 / 列表切换、明暗切换（跟随系统 / 浅色 / 深色）、配置面板入口、分组快捷锚点
-- 链接一律新窗口打开；无 `icon` 时用首字母色块兜底；列表模式额外显示完整地址
-- 配置面板（右侧抽屉）：外观（标题 / Logo / 主题 / 主色 / 字号 / 间距 / 默认展示模式）、分组（增删改名、排序、链接增删改）、数据（上传配置 JSON / 书签 HTML 并选合并或替换、导出 JSON / 导出 Chrome 书签、重新合并 / 恢复内置）
-- 明暗模式首屏不会闪白：`index.html` 里先按本地配置定好 `html[data-theme]`，再由 React 接管
+```bash
+pnpm dev              # 本地开发
+pnpm refresh          # 校验并刷新 src/global_runtime.json
+pnpm check            # lint + 合并规则测试 + 配置校验
+pnpm build            # 网页构建
+pnpm build:extension  # Chrome 新标签页扩展构建（产物在 dist-extension/）
+```
 
 ## 体积说明
 
-`global_original.json5` 里 964 个 base64 图标约占 850 KB（构建产物 gzip 后约 790 KB）。图标存在配置里可以离线可用、
-导出即完整；如果更在意首屏体积，执行：
+`global_original.json5` 里如果包含大量 base64 图标，构建产物和同步配额都会明显增大。需要更轻量时可以执行：
 
 ```bash
 pnpm import:bookmarks --no-icons && pnpm refresh
 ```
 
-配置面板上传书签 HTML 时也可以不勾选「保留 base64 图标」，效果相同。
-
-配置会降到约 150 KB，页面改用首字母色块（也可以给单条链接填图片地址）。
+配置面板上传书签 HTML 时也可以不勾选「保留 base64 图标」，让页面改用首字母色块兜底。

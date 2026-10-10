@@ -1,8 +1,10 @@
-import { BgColorsOutlined, DeleteOutlined, DownloadOutlined, ExportOutlined, InboxOutlined, PlusOutlined, ReloadOutlined, RollbackOutlined } from '@ant-design/icons'
+import { BgColorsOutlined, CloudDownloadOutlined, CloudUploadOutlined, DeleteOutlined, DownloadOutlined, ExportOutlined, InboxOutlined, PlusOutlined, ReloadOutlined, RollbackOutlined } from '@ant-design/icons'
 import { Alert, App, Button, Checkbox, ColorPicker, Drawer, Input, Modal, Popconfirm, Segmented, Slider, Space, Tabs, Tag, Upload } from 'antd'
 import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { groupStats, parseBookmarksHtml } from '../config/bookmarks.ts'
+import type { BookmarkParseResult } from '../config/bookmarks.ts'
+import { chromeBookmarksAvailable, pushChromeBookmarks, pullChromeBookmarks } from '../config/chromeBookmarks.ts'
 import { useConfig } from '../config/configContext.ts'
 import type { ImportMode, ImportPayload } from '../config/configContext.ts'
 import { mergeImported } from '../config/merge.ts'
@@ -11,12 +13,10 @@ import type { NavGroup, ThemeMode, ViewMode } from '../config/schema.ts'
 import { readConfigText } from '../config/storage.ts'
 import { GroupEditor } from './GroupEditor.tsx'
 
-/** 待上传的文件：只读一次文本，解析放在 useMemo 里，勾选框一变预览就跟着变 */
-interface PendingUpload {
-  file: File
-  kind: 'json' | 'bookmarks'
-  text: string
-}
+/** 待处理的导入内容：文件只读一次文本，Chrome 书签则直接带解析结果，预览逻辑保持一致 */
+type PendingUpload =
+  | { file: File; kind: 'json' | 'bookmarks'; text: string }
+  | { file: null; kind: 'chrome-bookmarks'; result: BookmarkParseResult }
 
 /** 解析结果：成功给载荷，失败给消息（在弹窗里展示，用户能看清哪里不对） */
 type ParsedUpload =
@@ -25,7 +25,7 @@ type ParsedUpload =
 
 const formatSize = (bytes: number) => `${(bytes / 1024).toFixed(1)} KB`
 
-/** 丢弃图标：页面本来就有首字母色块兜底，用于把 ~1MB 的 base64 挡在 localStorage 之外 */
+/** 丢弃图标：页面本来就有首字母色块兜底，也避免大体积 base64 挤占同步配额 */
 function dropIcons(groups: Record<string, NavGroup>): Record<string, NavGroup> {
   return Object.fromEntries(
     Object.entries(groups).map(([id, group]) => [id, { ...group, links: group.links.map((link) => ({ ...link, icon: '' })) }]),
@@ -50,7 +50,7 @@ function SettingRow({ label, hint, children }: { label: string; hint?: string; c
 }
 
 export function ConfigDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { settings, groups, groupIds, linkCount, updateSettings, addGroup, applyImport, exportConfig, exportBookmarks, remargeRuntime, resetToRuntime, storageError, mergeNotice, dismissMergeNotice } =
+  const { settings, groups, groupIds, linkCount, updateSettings, addGroup, applyImport, exportConfig, exportBookmarks, remargeRuntime, resetToRuntime, storageError, storageMode, storageReady, mergeNotice, dismissMergeNotice } =
     useConfig()
   const { message } = App.useApp()
   const [pending, setPending] = useState<PendingUpload | null>(null)
@@ -58,6 +58,9 @@ export function ConfigDrawer({ open, onClose }: { open: boolean; onClose: () => 
   /** 上传的落地方式：默认合并（安全的那一侧），替换要在弹窗里显式选 */
   const [importMode, setImportMode] = useState<ImportMode>('merge')
   const [keepIcons, setKeepIcons] = useState(true)
+  const [pullingBookmarks, setPullingBookmarks] = useState(false)
+  const [pushingBookmarks, setPushingBookmarks] = useState(false)
+  const bookmarksAvailable = chromeBookmarksAvailable()
 
   const uploadLogo = (file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -82,6 +85,13 @@ export function ConfigDrawer({ open, onClose }: { open: boolean; onClose: () => 
   const parsed = useMemo<ParsedUpload | null>(() => {
     if (!pending) return null
     try {
+      if (pending.kind === 'chrome-bookmarks') {
+        return {
+          ok: true,
+          payload: { groups: pending.result.groups, settings: null, source: 'bookmarks' },
+          stats: pending.result.stats,
+        }
+      }
       // 书签 HTML 在解析时就不装图标；配置 JSON 里的图标解析完再统一摘掉，两条路径的预览口径一致
       if (pending.kind === 'bookmarks') {
         const { groups: bookmarks } = parseBookmarksHtml(pending.text, { keepIcons })
@@ -113,6 +123,41 @@ export function ConfigDrawer({ open, onClose }: { open: boolean; onClose: () => 
       skipped: merged.skippedLinks,
     }
   }, [parsed, importMode, groups])
+
+  const pullBookmarks = async () => {
+    if (!bookmarksAvailable) {
+      message.error('当前不是扩展环境，无法读取 Chrome 书签')
+      return
+    }
+    setPullingBookmarks(true)
+    try {
+      const result = await pullChromeBookmarks()
+      setImportMode('merge')
+      setKeepIcons(true)
+      setPending({ file: null, kind: 'chrome-bookmarks', result })
+    } catch (error) {
+      message.error(`拉取 Chrome 书签失败：${(error as Error).message}`)
+    } finally {
+      setPullingBookmarks(false)
+    }
+  }
+
+  const pushBookmarks = async () => {
+    if (!bookmarksAvailable) {
+      message.error('当前不是扩展环境，无法写入 Chrome 书签')
+      return
+    }
+    setPushingBookmarks(true)
+    try {
+      const result = await pushChromeBookmarks(groups)
+      message.success(`已推送 ${result.folders} 个文件夹 / ${result.links} 条链接到 Chrome 书签`)
+      if (result.skipped > 0) message.warning(`有 ${result.skipped} 条非 http(s) 链接已跳过`)
+    } catch (error) {
+      message.error(`推送 Chrome 书签失败：${(error as Error).message}`)
+    } finally {
+      setPushingBookmarks(false)
+    }
+  }
 
   const confirmImport = () => {
     if (!parsed?.ok) return
@@ -223,6 +268,19 @@ export function ConfigDrawer({ open, onClose }: { open: boolean; onClose: () => 
           ]}
         />
       </SettingRow>
+
+      <SettingRow label="搜索引擎" hint="用于新标签页顶部的全局搜索">
+        <Segmented
+          block
+          value={settings.searchEngine}
+          onChange={(value) => updateSettings({ searchEngine: value as typeof settings.searchEngine })}
+          options={[
+            { label: 'Google', value: 'google' },
+            { label: '百度', value: 'baidu' },
+            { label: '必应', value: 'bing' },
+          ]}
+        />
+      </SettingRow>
     </div>
   )
 
@@ -237,12 +295,48 @@ export function ConfigDrawer({ open, onClose }: { open: boolean; onClose: () => 
         </Button>
       </Space>
 
+      <div className="rounded-lg border border-[var(--spirit-border)] bg-[var(--spirit-inset)] p-3">
+        <div className="mb-2 text-sm font-medium text-[var(--spirit-text)]">Chrome 书签双向同步</div>
+        <Space wrap>
+          <Button
+            icon={<CloudDownloadOutlined />}
+            loading={pullingBookmarks}
+            disabled={!bookmarksAvailable}
+            onClick={() => void pullBookmarks()}
+          >
+            从 Chrome 书签拉取
+          </Button>
+          <Popconfirm
+            title="推送到 Chrome 书签？"
+            description="会重建书签栏下的「导航精灵」文件夹；其他书签不受影响。"
+            okText="推送"
+            cancelText="取消"
+            onConfirm={() => void pushBookmarks()}
+          >
+            <Button
+              icon={<CloudUploadOutlined />}
+              loading={pushingBookmarks}
+              disabled={!bookmarksAvailable}
+            >
+              推送到 Chrome 书签
+            </Button>
+          </Popconfirm>
+        </Space>
+        <div className="mt-2 text-xs leading-5 text-[var(--spirit-muted)]">
+          {bookmarksAvailable
+            ? '拉取只读「导航精灵」（不存在时读书签栏），随后可选择合并或替换；推送会覆盖「导航精灵」文件夹里的旧副本。'
+            : 'Chrome 书签 API 仅在已安装的扩展页面里可用。'}
+        </div>
+      </div>
+
       <div className="text-xs leading-6 text-[var(--spirit-muted)]">
         导出内容与 <code>global_original.json5</code>、<code>src/global_runtime.json</code> 结构完全一致，
         可以直接拿去替换源配置，也可以再上传回来。
         <br />
         书签文件是 Chrome 的书签格式（<code>NETSCAPE-Bookmark-file-1</code>），在 Chrome 的书签管理器里
         「导入书签和设置」选它即可；分组按标题里的 <code> / </code> 拆成文件夹层级，「常用」那一组写在书签栏下。
+        <br />
+        「导航精灵」书签文件夹只是手动双向同步副本，完整配置仍以 chrome.storage.sync 为准。
       </div>
 
       <Upload.Dragger
@@ -290,6 +384,9 @@ export function ConfigDrawer({ open, onClose }: { open: boolean; onClose: () => 
         当前：{groupIds.length} 个分组 / {linkCount} 条链接。
         <br />
         合并规则：本地改动优先，内置配置新增的分组与链接会自动并入，本地删掉的不会被合并回来。
+        <br />
+        持久化：{storageMode === 'sync' ? '整个配置通过 chrome.storage.sync 在多设备间同步。' : '当前为网页模式，整个配置保存在 localStorage；安装扩展后会自动同步到 Chrome 账户。'}
+        {!storageReady && ' 正在读取浏览器存储…'}
       </div>
 
       {mergeNotice && (
@@ -301,7 +398,7 @@ export function ConfigDrawer({ open, onClose }: { open: boolean; onClose: () => 
           description="本地改动保留，内置配置新增的内容已追加进来。"
         />
       )}
-      {storageError && <Alert type="error" showIcon title="本地存储不可用" description={storageError} />}
+      {storageError && <Alert type="error" showIcon title={storageMode === 'sync' ? 'Chrome 同步存储不可用' : '本地存储不可用'} description={storageError} />}
     </div>
   )
 
@@ -333,7 +430,7 @@ export function ConfigDrawer({ open, onClose }: { open: boolean; onClose: () => 
 
       <Modal
         open={pending !== null}
-        title={parsed?.ok === false ? '文件解析失败' : '上传配置'}
+        title={parsed?.ok === false ? '解析失败' : pending?.kind === 'chrome-bookmarks' ? '导入 Chrome 书签' : '上传配置'}
         width={460}
         okText={importMode === 'replace' ? '全部替换' : '合并'}
         cancelText="取消"
@@ -342,7 +439,9 @@ export function ConfigDrawer({ open, onClose }: { open: boolean; onClose: () => 
         onOk={confirmImport}
       >
         <p className="mb-3 text-xs text-[var(--spirit-muted)]">
-          文件：{pending?.file.name}（{pending?.kind === 'bookmarks' ? 'Chrome 书签 HTML' : '配置 JSON'}）
+          {pending?.kind === 'chrome-bookmarks'
+            ? '来源：Chrome 书签（「导航精灵」或书签栏）'
+            : `文件：${pending?.file?.name ?? ''}（${pending?.kind === 'bookmarks' ? 'Chrome 书签 HTML' : '配置 JSON'}）`}
         </p>
 
         {parsed && !parsed.ok && (
@@ -355,7 +454,7 @@ export function ConfigDrawer({ open, onClose }: { open: boolean; onClose: () => 
               解析出 <b>{parsed.stats.groups}</b> 个分组 / <b>{parsed.stats.links}</b> 条链接
               {parsed.stats.icons > 0 && <>，其中 {parsed.stats.icons} 条带图标</>}
               <br />
-              约 {formatSize(parsed.stats.bytes)}，会写入浏览器本地存储
+              约 {formatSize(parsed.stats.bytes)}，会写入{storageMode === 'sync' ? ' Chrome 同步存储' : '浏览器本地存储'}
             </div>
 
             <SettingRow label="落地方式" hint={importMode === 'merge' ? '并进现有配置' : '不保留当前内容'}>
