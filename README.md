@@ -114,7 +114,7 @@ id 是相对书签栏的路径（如 `学习/刷题`），标题是 `学习 / �
 书签导出是解析的反向操作（同一份 `src/config/bookmarks.ts`）：分组标题按 ` / ` 拆成文件夹层级（所以
 `学习 / 刷题` 会变成「学习 > 刷题」两层），id 为 `default` 的那一组写成书签栏的直属链接，空分组不写出空
 文件夹。`renderBookmarksHtml(parseBookmarksHtml(x).groups)` 与 `x` 在 `pnpm check:merge` 里有往返断言，
-拿仓库里的 `chrome_bookmarks_demo.html`（200 条链接 / 10 个分组）实测逐字节一致。
+拿仓库里的 `chrome_bookmarks_demo.html`（30 条链接 / 3 个分组）实测逐字节一致。
 
 不写 `ADD_DATE` / `LAST_MODIFIED`：配置里没有这两个时间，凭空写"现在"会让 Chrome 里所有书签的添加时间
 都变成同一刻，不如交给 Chrome 按导入时间自己处理。

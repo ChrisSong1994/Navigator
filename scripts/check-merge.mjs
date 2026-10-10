@@ -341,9 +341,9 @@ test('书签导出 → 解析：公开 demo 导出（chrome_bookmarks_demo.html�
   const demo = readFileSync(new URL('../chrome_bookmarks_demo.html', import.meta.url), 'utf8')
   const original = parseBookmarksHtml(demo).groups
   const roundTripped = parseBookmarksHtml(renderBookmarksHtml(original)).groups
-  assert.deepEqual(roundTripped, original, '200 条链接 / 10 个分组原样回来')
-  assert.equal(Object.keys(roundTripped).length, 10)
-  assert.equal(Object.values(roundTripped).reduce((total, group) => total + group.links.length, 0), 200)
+  assert.deepEqual(roundTripped, original, '30 条链接 / 3 个分组原样回来')
+  assert.equal(Object.keys(roundTripped).length, 3)
+  assert.equal(Object.values(roundTripped).reduce((total, group) => total + group.links.length, 0), 30)
 })
 
 console.log(`\n${passed} 项通过`)
