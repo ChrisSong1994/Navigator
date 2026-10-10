@@ -1,0 +1,101 @@
+/*
+ * 工具类故意不放进 @layer：
+ * antd 的样式是运行时 CSS-in-JS 注入的、不分层的规则，而按 CSS 级联层规则，
+ * unlayered 规则永远压过 @layer 里的规则（跟选择器权重无关）。antd 重置里的
+ * :where(.css-xxx) a { color / background-color / transition } 权重只有 (0,0,1)，
+ * 但只要它不分层，链接和按钮上的 bg-* / text-* / transition-* 就全部失效
+ * （卡片底色、文字颜色、过渡都画不出来）。工具类改成不分层后按权重正常生效，
+ * 同时 antd 组件自身 (0,1,0) 的样式仍靠文档顺序压过同名工具类。
+ */
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/preflight.css' layer(base);
+@import 'tailwindcss/utilities.css';
+
+/* 明暗由 html[data-theme] 决定（跟随系统 / 手动切换都落到这里），而不是只依赖 prefers-color-scheme */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+/*
+ * 三层背景，从下往上依次抬高，区域之间靠底色差异划分，边框只负责收边：
+ *   canvas  页面底色，所有区域都浮在它上面
+ *   surface 结构层：顶栏、分组目录栏、每个分组面板
+ *   inset   内嵌层：面板里的链接卡片、列表容器、嵌入的占位块
+ */
+:root {
+  --spirit-accent: #1677ff;
+  --spirit-canvas: #d8dde7;
+  --spirit-surface: #ffffff;
+  --spirit-inset: #e4e9f1;
+  --spirit-inset-hover: #d9dfea;
+  /* 边框保持原来的强度：列表行分隔、虚线占位块还得靠它，区域划分交给底色 */
+  --spirit-border: rgba(17, 24, 39, 0.08);
+  --spirit-border-strong: rgba(17, 24, 39, 0.18);
+  --spirit-text: #1f2329;
+  /* 画布比原来深了一档，次要文字跟着压深，保证落在 canvas 上也有足够对比 */
+  --spirit-muted: #767c86;
+  --spirit-shadow: 0 6px 20px rgba(15, 23, 42, 0.08);
+  --spirit-toc-shadow: rgba(15, 23, 42, 0.12);
+}
+
+/* 深色下同样三层，只是越往上越亮（亮 = 越高） */
+[data-theme='dark'] {
+  --spirit-canvas: #08090c;
+  --spirit-surface: #1a1d24;
+  --spirit-inset: #252a34;
+  --spirit-inset-hover: #2e3440;
+  --spirit-border: rgba(255, 255, 255, 0.08);
+  --spirit-border-strong: rgba(255, 255, 255, 0.16);
+  --spirit-text: #e6e8ec;
+  --spirit-muted: #868c96;
+  --spirit-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --spirit-toc-shadow: rgba(0, 0, 0, 0.6);
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--spirit-canvas);
+  color: var(--spirit-text);
+  font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 画布层：整页底色 + 顶部一层极淡的主色光晕，让抬起的区域有"浮在上面"的参照 */
+.spirit-canvas {
+  background-color: var(--spirit-canvas);
+  background-image: radial-gradient(1100px 380px at 50% -140px, color-mix(in srgb, var(--spirit-accent) 16%, transparent), transparent 70%);
+}
+
+/* 分组很多时（当前 1000+ 链接）跳过屏幕外分组的渲染，滚动依然顺滑 */
+.spirit-section {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 260px;
+}
+
+/* 左侧固定目录与内容区之间保持明确的空间层级 */
+.spirit-toc {
+  box-shadow: 14px 0 32px -16px var(--spirit-toc-shadow);
+}
+
+.spirit-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--spirit-border-strong) transparent;
+}
+
+.spirit-scroll::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+
+.spirit-scroll::-webkit-scrollbar-thumb {
+  background: var(--spirit-border-strong);
+  border-radius: 999px;
+}
+
+.spirit-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}

@@ -1,0 +1,76 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write # 允许把刷新后的 global_runtime.json 提交回 main
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 校验并解析配置（global_original.json5 → src/global_runtime.json）
+        run: pnpm refresh
+
+      - name: 把刷新结果同步回 main
+        if: github.ref == 'refs/heads/main' && github.actor != 'github-actions[bot]'
+        run: |
+          if git diff --quiet -- src/global_runtime.json; then
+            echo "src/global_runtime.json 已是最新，无需提交"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/global_runtime.json
+          git commit -m "chore: 同步 global_runtime.json [skip ci]"
+          git push
+
+      - name: 合并规则冒烟测试
+        run: pnpm check:merge
+
+      - name: 代码检查
+        run: pnpm lint
+
+      - uses: actions/configure-pages@v5
+
+      - name: 构建前端
+        env:
+          VITE_BASE_PATH: /${{ github.event.repository.name }}/
+        run: pnpm build
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
