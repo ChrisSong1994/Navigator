@@ -1,4 +1,4 @@
-import { DeleteOutlined, EditOutlined, HolderOutlined, MoreOutlined } from '@ant-design/icons'
+import { DeleteOutlined, EditOutlined, MoreOutlined } from '@ant-design/icons'
 import { rectSortingStrategy, SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { App, Dropdown } from 'antd'
@@ -74,6 +74,7 @@ function LinkItemBase({ link, groupId, index, fontSize, card, sortable }: LinkIt
       ? 'flex items-center gap-2.5 rounded-[10px] bg-[var(--spirit-inset)] py-2.5 pl-3 pr-9 text-[var(--spirit-text)] no-underline transition-all duration-150 hover:-translate-y-px hover:bg-[color-mix(in_srgb,var(--spirit-accent)_12%,var(--spirit-inset))] hover:text-[var(--spirit-text)] hover:shadow-[var(--spirit-shadow)]'
       : 'flex items-center gap-3 py-2.5 pl-3.5 pr-11 text-[var(--spirit-text)] no-underline transition-colors hover:bg-[var(--spirit-inset-hover)] hover:text-[var(--spirit-text)]',
     'select-none',
+    sortable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
     // 落点高亮画在框内，分组间距调小时也不会压到相邻的卡片
     isOver && !isDragging ? 'ring-2 ring-inset ring-[var(--spirit-accent)]' : '',
   ]
@@ -88,6 +89,8 @@ function LinkItemBase({ link, groupId, index, fontSize, card, sortable }: LinkIt
         className={`group/nav relative ${isDragging ? 'opacity-40' : ''}`}
       >
         <a
+          {...attributes}
+          {...listeners}
           href={link.href}
           target="_blank"
           rel="noreferrer noopener"
@@ -125,19 +128,6 @@ function LinkItemBase({ link, groupId, index, fontSize, card, sortable }: LinkIt
             </button>
           </Dropdown>
         </div>
-
-        {sortable && (
-          <button
-            type="button"
-            aria-label="拖拽调整链接顺序"
-            title="拖拽调整链接顺序"
-            className="absolute left-1 top-1/2 z-10 grid h-6 w-6 -translate-y-1/2 cursor-grab touch-none place-items-center rounded-md border-none bg-[var(--spirit-surface)] p-0 leading-none text-[var(--spirit-muted)] opacity-0 shadow-sm transition-opacity group-hover/nav:opacity-100 focus-visible:opacity-100 active:cursor-grabbing"
-            {...attributes}
-            {...listeners}
-          >
-            <HolderOutlined />
-          </button>
-        )}
 
         {editing && group && <LinkFormModal groupId={groupId} groupTitle={group.title} link={link} onClose={() => setEditing(false)} />}
       </div>

@@ -38,7 +38,8 @@ export function LinkSortProvider({ sortable, children }: { sortable: boolean; ch
   const sensors = useSensors(
     useSensor(PointerSensor, {
       disabled: !sortable,
-      activationConstraint: { distance: 6 },
+      // 整条链接都是拖拽把手：短按仍然打开链接，按住后再移动才进入排序。
+      activationConstraint: { delay: 60, tolerance: 6 },
     }),
     useSensor(KeyboardSensor, {
       disabled: !sortable,
