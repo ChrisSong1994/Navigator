@@ -1,5 +1,6 @@
 import { SearchOutlined } from '@ant-design/icons'
 import { Button, Dropdown, Input } from 'antd'
+import type { InputRef } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useConfig } from '../config/configContext.ts'
 import { getSearchEngineAssets } from '../search/engineAssets.ts'
@@ -26,7 +27,7 @@ export function GlobalSearch() {
   const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([])
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<InputRef>(null)
   const requestRef = useRef(0)
 
   const engine = getSearchEngine(settings.searchEngine)
@@ -127,9 +128,9 @@ export function GlobalSearch() {
         menu={menu}
         trigger={[]}
         placement="bottom"
-        overlayStyle={{ width: '100%' }}
+        styles={{ root: { width: '100%' } }}
       >
-        <div className="flex rounded-xl border border-[var(--spirit-border)] bg-[var(--spirit-surface)] p-1.5 shadow-[var(--spirit-shadow)] transition-colors focus-within:border-[var(--spirit-accent)]">
+        <div className="flex rounded-xl border border-[var(--spirit-border)] bg-[var(--spirit-surface)] p-1.5 shadow-[var(--spirit-shadow)] transition-colors focus-within:border-[var(--spirit-accent)] items-center">
           <Dropdown
             trigger={['click']}
             menu={{
@@ -148,14 +149,14 @@ export function GlobalSearch() {
             </Button>
           </Dropdown>
           <Input
-            ref={inputRef as never}
+            ref={inputRef}
             variant="borderless"
             size="large"
             value={value}
             autoComplete="off"
             placeholder="搜索内容，或输入网址"
             aria-label="搜索内容或网址"
-            className="min-w-0 flex-1"
+            className="min-w-0 flex-1 [&_.ant-input]:!bg-transparent [&_.ant-input]:!outline-none [&.ant-input-borderless:focus-visible]:!outline-none [&.ant-input-borderless:has(input:focus-visible)]:!outline-none"
             onChange={(event) => setValue(event.target.value)}
             onFocus={() => visibleSuggestions.length > 0 && setOpen(true)}
             onBlur={() => window.setTimeout(() => setOpen(false), 120)}
