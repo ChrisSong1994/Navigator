@@ -19,6 +19,7 @@ export const CONFIG_KEY = 'navigator:config'
 export const META_KEY = 'navigator:meta'
 export const SYNC_MANIFEST_KEY = 'navigator:sync:manifest'
 export const SYNC_CHUNK_PREFIX = 'navigator:sync:chunk:'
+const UPDATED_AT_KEY = 'navigator:updatedAt'
 
 /** chrome.storage.sync 单项上限 8 KB；留一点 JSON 包装余量 */
 const SYNC_CHUNK_BYTES = 8_000
@@ -42,6 +43,8 @@ export interface LocalSnapshot {
   config: NavConfig | null
   meta: LocalMeta | null
   revision: string | null
+  /** 快照写入时间；用于在两个存储区域都可用时选择较新的完整快照 */
+  updatedAt: number
 }
 
 export type StorageArea = 'sync' | 'local'
@@ -133,10 +136,8 @@ function makeRevision(text: string): string {
   return `${Date.now().toString(36)}-${(hash >>> 0).toString(16).padStart(8, '0')}`
 }
 
-function metaFromLocal(configText: unknown, meta: unknown): SyncSnapshotPayload {
-  const config = parseConfig(configText).config
-  if (!config) throw new Error('本机配置快照无效')
-  return { config, meta: (meta ?? null) as LocalMeta }
+function emptySnapshot(): LocalSnapshot {
+  return { config: null, meta: null, revision: null, updatedAt: 0 }
 }
 
 function parseSnapshot(raw: unknown): LocalSnapshot {
@@ -145,18 +146,49 @@ function parseSnapshot(raw: unknown): LocalSnapshot {
       const parsed = JSON.parse(raw) as SyncSnapshotPayload | NavConfig
       if (parsed && typeof parsed === 'object' && 'config' in parsed && 'meta' in parsed) {
         const snapshot = parsed as SyncSnapshotPayload
-        return { config: parseConfig(snapshot.config).config, meta: snapshot.meta, revision: null }
+        return { config: parseConfig(snapshot.config).config, meta: snapshot.meta, revision: null, updatedAt: 0 }
       }
-      return { config: parseConfig(parsed).config, meta: null, revision: null }
+      return { config: parseConfig(parsed).config, meta: null, revision: null, updatedAt: 0 }
     } catch {
-      return { config: null, meta: null, revision: null }
+      return emptySnapshot()
     }
   }
   if (raw && typeof raw === 'object' && 'config' in raw && 'meta' in raw) {
     const snapshot = raw as SyncSnapshotPayload
-    return { config: parseConfig(snapshot.config).config, meta: snapshot.meta, revision: null }
+    return { config: parseConfig(snapshot.config).config, meta: snapshot.meta, revision: null, updatedAt: 0 }
   }
-  return { config: raw === null || raw === undefined ? null : parseConfig(raw).config, meta: null, revision: null }
+  return { config: raw === null || raw === undefined ? null : parseConfig(raw).config, meta: null, revision: null, updatedAt: 0 }
+}
+
+/** 两个存储区域都可能有完整快照；同一时刻优先本地，时间较新的优先。 */
+function pickNewestSnapshot(...candidates: LocalSnapshot[]): LocalSnapshot {
+  let best = emptySnapshot()
+  for (const candidate of candidates) {
+    if (!candidate.config) continue
+    if (!best.config || candidate.updatedAt >= best.updatedAt) best = candidate
+  }
+  return best
+}
+
+function readWebSnapshot(): LocalSnapshot {
+  const raw = readWebJson<unknown>(CONFIG_KEY)
+  if (raw === null) return emptySnapshot()
+  const config = parseConfig(raw).config
+  const meta = readWebJson<LocalMeta>(META_KEY)
+  const updatedAt = readWebJson<number>(UPDATED_AT_KEY)
+  return { config, meta, revision: lastLocalRevision || null, updatedAt: updatedAt ?? meta?.updatedAt ?? 0 }
+}
+
+function writeWebSnapshot(configText: string, meta: LocalMeta, updatedAt: number): void {
+  window.localStorage.setItem(CONFIG_KEY, configText)
+  window.localStorage.setItem(META_KEY, JSON.stringify(meta))
+  window.localStorage.setItem(UPDATED_AT_KEY, JSON.stringify(updatedAt))
+}
+
+function removeWebSnapshot(): void {
+  window.localStorage.removeItem(CONFIG_KEY)
+  window.localStorage.removeItem(META_KEY)
+  window.localStorage.removeItem(UPDATED_AT_KEY)
 }
 
 function isManifest(value: unknown): value is SyncManifest {
@@ -171,32 +203,42 @@ function isManifest(value: unknown): value is SyncManifest {
   )
 }
 
+async function readChromeLocalSnapshot(): Promise<LocalSnapshot> {
+  const local = await chrome.storage.local.get([CONFIG_KEY, META_KEY, UPDATED_AT_KEY])
+  const rawConfig = local[CONFIG_KEY]
+  if (rawConfig === undefined) return emptySnapshot()
+  const config = parseConfig(rawConfig).config
+  const meta = (local[META_KEY] ?? null) as LocalMeta | null
+  const updatedAt = local[UPDATED_AT_KEY]
+  return { config, meta, revision: null, updatedAt: typeof updatedAt === 'number' ? updatedAt : meta?.updatedAt ?? 0 }
+}
+
 async function readSyncSnapshot(): Promise<LocalSnapshot> {
-  const manifestResult = await chrome.storage.sync.get(SYNC_MANIFEST_KEY)
-  const manifest = manifestResult[SYNC_MANIFEST_KEY]
-  if (!isManifest(manifest)) {
-    // 兼容旧版本直接放在 sync 下的 navigator:config；读出来后由 Provider 首次保存迁移为分片格式。
-    const legacy = await chrome.storage.sync.get(CONFIG_KEY)
-    if (legacy[CONFIG_KEY] !== undefined) return parseSnapshot(legacy[CONFIG_KEY])
-    // 新分片格式尚未完成时，优先用本机完整快照兜底，避免展示半份配置。
-    const local = await chrome.storage.local.get([CONFIG_KEY, META_KEY])
-    if (local[CONFIG_KEY] === undefined) return { config: null, meta: null, revision: null }
-    return parseSnapshot(metaFromLocal(local[CONFIG_KEY], local[META_KEY]))
+  // 本机完整快照先读出来：sync 分片写坏、配额不足或页面刚写入尚未同步时，
+  // 它比旧的 sync manifest 新，应该以本机为准。
+  const [chromeLocal, webLocal] = await Promise.all([readChromeLocalSnapshot(), Promise.resolve(readWebSnapshot())])
+  let sync = emptySnapshot()
+
+  try {
+    const manifestResult = await chrome.storage.sync.get(SYNC_MANIFEST_KEY)
+    const manifest = manifestResult[SYNC_MANIFEST_KEY]
+    if (!isManifest(manifest)) {
+      // 兼容旧版本直接放在 sync 下的 navigator:config；读出来后由 Provider 首次保存迁移为分片格式。
+      const legacy = await chrome.storage.sync.get(CONFIG_KEY)
+      if (legacy[CONFIG_KEY] !== undefined) sync = parseSnapshot(legacy[CONFIG_KEY])
+    } else {
+      const keys = Array.from({ length: manifest.chunks }, (_, index) => `${SYNC_CHUNK_PREFIX}${index}`)
+      const chunkResult = await chrome.storage.sync.get(keys)
+      const parts = keys.map((key) => chunkResult[key])
+      if (parts.every((part) => typeof part === 'string')) {
+        sync = { ...parseSnapshot(parts.join('')), revision: manifest.revision, updatedAt: manifest.updatedAt }
+      }
+    }
+  } catch {
+    // sync 读取失败不影响本机完整快照。
   }
 
-  const keys = Array.from({ length: manifest.chunks }, (_, index) => `${SYNC_CHUNK_PREFIX}${index}`)
-  const chunkResult = await chrome.storage.sync.get(keys)
-  const parts = keys.map((key) => chunkResult[key])
-  if (!parts.every((part) => typeof part === 'string')) {
-    // 分片写入中断：尝试 local 的完整快照，避免把半份数据交给页面
-    const local = await chrome.storage.local.get([CONFIG_KEY, META_KEY])
-    if (local[CONFIG_KEY] === undefined) return { config: null, meta: null, revision: null }
-    const parsed = parseSnapshot(metaFromLocal(local[CONFIG_KEY], local[META_KEY]))
-    return { ...parsed, revision: manifest.revision }
-  }
-
-  const parsed = parseSnapshot(parts.join(''))
-  return { ...parsed, revision: manifest.revision }
+  return pickNewestSnapshot(sync, chromeLocal, webLocal)
 }
 
 /** 只匹配本扩展自己的数字分片，不碰其他扩展键 */
@@ -210,7 +252,7 @@ async function listSyncChunkKeys(): Promise<string[]> {
   return Object.keys(all).filter(isSyncChunkKey)
 }
 
-async function writeSyncSnapshot(configText: string, meta: LocalMeta): Promise<void> {
+async function writeSyncSnapshot(configText: string, meta: LocalMeta, updatedAt: number): Promise<void> {
   const payload: SyncSnapshotPayload = { config: JSON.parse(configText) as NavConfig, meta }
   const serialized = JSON.stringify(payload)
   const chunks = chunkText(serialized)
@@ -219,7 +261,7 @@ async function writeSyncSnapshot(configText: string, meta: LocalMeta): Promise<v
   })
 
   const revision = makeRevision(serialized)
-  const manifest: SyncManifest = { version: SYNC_SCHEMA_VERSION, revision, chunks: chunks.length, updatedAt: Date.now() }
+  const manifest: SyncManifest = { version: SYNC_SCHEMA_VERSION, revision, chunks: chunks.length, updatedAt }
 
   // manifest 最后写入：只有所有分片都就位后，其它设备才可能把它当成完整快照读取。
   const entries: Record<string, unknown> = {}
@@ -234,61 +276,74 @@ async function writeSyncSnapshot(configText: string, meta: LocalMeta): Promise<v
   if (staleKeys.length > 0) await chrome.storage.sync.remove(staleKeys)
 
   lastLocalRevision = revision
-  const localEntries: Record<string, unknown> = {
-    [CONFIG_KEY]: configText,
-    [META_KEY]: meta,
-  }
-  await chrome.storage.local.set(localEntries)
 }
 
 async function removeSyncSnapshot(): Promise<void> {
   const staleKeys = await listSyncChunkKeys()
   await chrome.storage.sync.remove([CONFIG_KEY, META_KEY, SYNC_MANIFEST_KEY, ...staleKeys])
   lastLocalRevision = ''
-  await chrome.storage.local.remove([CONFIG_KEY, META_KEY])
+  await chrome.storage.local.remove([CONFIG_KEY, META_KEY, UPDATED_AT_KEY])
 }
 
 export async function loadSnapshot(): Promise<LocalSnapshot> {
-  if (!isExtensionStorageAvailable()) {
-    const rawConfig = readWebJson<unknown>(CONFIG_KEY)
-    if (rawConfig === null) return { config: null, meta: readWebJson<LocalMeta>(META_KEY), revision: null }
-    const parsed = parseConfig(rawConfig).config
-    return {
-      config: parsed,
-      meta: readWebJson<LocalMeta>(META_KEY),
-      revision: lastLocalRevision || null,
-    }
-  }
+  if (!isExtensionStorageAvailable()) return readWebSnapshot()
   return readSyncSnapshot()
 }
 
 /** 兼容旧调用：开发环境同步读取，扩展环境返回 null，由 ConfigProvider 的异步初始化接管 */
 export function loadLocal(): LocalSnapshot {
-  if (isExtensionStorageAvailable()) return { config: null, meta: null, revision: null }
-  return {
-    config: (() => {
-      const raw = readWebJson<unknown>(CONFIG_KEY)
-      return raw === null ? null : parseConfig(raw).config
-    })(),
-    meta: readWebJson<LocalMeta>(META_KEY),
-    revision: lastLocalRevision || null,
-  }
+  if (isExtensionStorageAvailable()) return emptySnapshot()
+  return readWebSnapshot()
+}
+
+function snapshotUpdatedAt(meta: LocalMeta): number {
+  return Math.max(Date.now(), meta.updatedAt || 0)
 }
 
 export async function saveSnapshot(config: NavConfig, meta: LocalMeta): Promise<void> {
   const configText = serializeConfig(config, 0)
+  const updatedAt = snapshotUpdatedAt(meta)
+
   if (!isExtensionStorageAvailable()) {
-    window.localStorage.setItem(CONFIG_KEY, configText)
-    window.localStorage.setItem(META_KEY, JSON.stringify(meta))
+    writeWebSnapshot(configText, meta, updatedAt)
     return
   }
-  await writeSyncSnapshot(configText, meta)
+
+  // 新标签页随时可能被关闭：先同步写 localStorage 兜底，再写 chrome.storage.local / sync。
+  // 即便页面在异步 API 完成前卸载，下一次启动也能从这份完整快照恢复。
+  try {
+    writeWebSnapshot(configText, meta, updatedAt)
+  } catch {
+    // 隐私策略 / 配额可能阻止 localStorage；继续走扩展存储。
+  }
+
+  // 完整快照先写到 local：sync 有 8 KB 分片与总量配额，失败时不能让刚导入的配置丢失。
+  await chrome.storage.local.set({
+    [CONFIG_KEY]: configText,
+    [META_KEY]: meta,
+    [UPDATED_AT_KEY]: updatedAt,
+  })
+  await writeSyncSnapshot(configText, meta, updatedAt)
+}
+
+/** pagehide / 页面隐藏时的同步兜底；不等待 chrome.storage 的异步写入。 */
+export function saveSnapshotNow(config: NavConfig, meta: LocalMeta): void {
+  const configText = serializeConfig(config, 0)
+  const updatedAt = snapshotUpdatedAt(meta)
+  if (!isExtensionStorageAvailable()) {
+    writeWebSnapshot(configText, meta, updatedAt)
+    return
+  }
+  try {
+    writeWebSnapshot(configText, meta, updatedAt)
+  } catch {
+    // 页面正在卸载，无法可靠展示错误；异步保存仍会在后台继续尝试。
+  }
 }
 
 export async function clearSnapshot(): Promise<void> {
   if (!isExtensionStorageAvailable()) {
-    window.localStorage.removeItem(CONFIG_KEY)
-    window.localStorage.removeItem(META_KEY)
+    removeWebSnapshot()
     lastLocalRevision = ''
     return
   }
@@ -298,15 +353,13 @@ export async function clearSnapshot(): Promise<void> {
 /** @deprecated 使用 saveSnapshot，保留同步名称给旧测试 / 调用方 */
 export function saveLocal(config: NavConfig, meta: LocalMeta): void {
   if (isExtensionStorageAvailable()) return
-  window.localStorage.setItem(CONFIG_KEY, serializeConfig(config, 0))
-  window.localStorage.setItem(META_KEY, JSON.stringify(meta))
+  writeWebSnapshot(serializeConfig(config, 0), meta, Date.now())
 }
 
 /** @deprecated 使用 clearSnapshot */
 export function clearLocal(): void {
   if (isExtensionStorageAvailable()) return
-  window.localStorage.removeItem(CONFIG_KEY)
-  window.localStorage.removeItem(META_KEY)
+  removeWebSnapshot()
 }
 
 function download(filename: string, text: string, type: string): string {

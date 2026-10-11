@@ -11,7 +11,7 @@ import type { LocalMeta } from './merge.ts'
 import { RUNTIME_CONFIG } from './runtime.ts'
 import { parseConfig } from './schema.ts'
 import type { NavConfig, NavGroup, NavLink, NavSettings } from './schema.ts'
-import { clearSnapshot, exportBookmarksFile, exportConfigFile, loadLocal, loadSnapshot, onStorageChange, saveSnapshot, storageMode } from './storage.ts'
+import { clearSnapshot, exportBookmarksFile, exportConfigFile, loadLocal, loadSnapshot, onStorageChange, saveSnapshot, saveSnapshotNow, storageMode } from './storage.ts'
 
 interface ConfigState {
   config: NavConfig
@@ -59,6 +59,12 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   const dirtyRef = useRef(false)
   const saveGenerationRef = useRef(0)
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
+  /** 最近一次 React 状态；pagehide / visibilitychange 不能依赖闭包里的旧值 */
+  const pendingSaveRef = useRef({ config, meta })
+
+  useEffect(() => {
+    pendingSaveRef.current = { config, meta }
+  }, [config, meta])
 
   useEffect(() => {
     if (storageKind === 'local') return
@@ -125,6 +131,37 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     }, 300)
     return () => clearTimeout(timer)
   }, [config, meta, storageReady, storageKind])
+
+  // 新标签页经常在修改后立刻被关闭 / 刷新：隐藏或卸载时同步冲刷一次，
+  // 保证刚「拉取书签」得到的内存配置已经进入完整快照，不依赖 300ms 防抖。
+  useEffect(() => {
+    if (!storageReady) return
+    const flush = () => {
+      if (!dirtyRef.current) return
+      const latest = pendingSaveRef.current
+      // 同步 localStorage 兜底保证 pagehide 已经开始后也不会丢；
+      // 异步链路继续写入 chrome.storage.local / sync。
+      try {
+        saveSnapshotNow(latest.config, latest.meta)
+      } catch {
+        // 隐私策略可能禁用 localStorage；继续尝试异步扩展存储。
+      }
+      const queued = saveQueueRef.current.then(
+        () => saveSnapshot(latest.config, latest.meta),
+        () => saveSnapshot(latest.config, latest.meta),
+      )
+      saveQueueRef.current = queued.catch(() => undefined)
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') flush()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('pagehide', flush)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('pagehide', flush)
+    }
+  }, [storageReady])
 
   const mutateGroups = useCallback(
     (

@@ -8,11 +8,12 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "check": "pnpm lint && pnpm check:merge && pnpm refresh --check",
+    "check": "pnpm lint && pnpm check:merge && pnpm check:storage && pnpm refresh --check",
     "refresh": "node scripts/refresh.mjs",
     "import:bookmarks": "node scripts/import-bookmarks.mjs",
     "build:extension": "tsc -b && vite build && node scripts/build-extension.mjs",
-    "check:merge": "node scripts/check-merge.mjs"
+    "check:merge": "node scripts/check-merge.mjs",
+    "check:storage": "node scripts/check-storage.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^6.3.4",
