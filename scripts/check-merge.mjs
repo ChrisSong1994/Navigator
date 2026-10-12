@@ -24,7 +24,7 @@ const test = (name, fn) => {
 
 const link = (href, text, icon = '') => ({ icon, href, text })
 const runtime = {
-  settings: { siteTitle: '内置标题', siteLogo: '', primaryColor: '', linkFontSize: 14, linkCardGap: 16, themeMode: 'system', viewMode: 'card', searchEngine: 'google' },
+  settings: { siteTitle: '内置标题', siteLogo: '', primaryColor: '', linkFontSize: 14, linkCardGap: 16, themeMode: 'system', viewMode: 'card', searchEngine: 'google', searchOpenInNewTab: true, linkOpenInNewTab: true },
   groups: {
     default: { title: '常用', links: [link('https://a.com', 'A'), link('https://b.com', 'B')] },
     学习: { title: '学习', links: [link('https://c.com', 'C')] },
@@ -132,6 +132,8 @@ test('校验：缺省字段用默认值补齐，未知字段被剔除', () => {
   const result = parseConfig({ settings: { siteTitle: 'X' }, groups: { g: { title: 'G', links: [link('https://a.com', 'A')] } } })
   assert.equal(result.config.settings.themeMode, 'system')
   assert.equal(result.config.settings.linkFontSize, 14)
+  assert.equal(result.config.settings.searchOpenInNewTab, true)
+  assert.equal(result.config.settings.linkOpenInNewTab, true)
 })
 
 // ---------------------------------------------------------------- 上传：Chrome 书签 HTML 解析

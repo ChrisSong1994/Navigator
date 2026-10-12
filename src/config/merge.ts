@@ -76,6 +76,8 @@ function mergeSettings(runtime: NavSettings, local: NavSettings, base: NavSettin
     themeMode: pick('themeMode'),
     viewMode: pick('viewMode'),
     searchEngine: pick('searchEngine'),
+    searchOpenInNewTab: pick('searchOpenInNewTab'),
+    linkOpenInNewTab: pick('linkOpenInNewTab'),
   }
 }
 

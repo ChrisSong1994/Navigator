@@ -277,6 +277,7 @@ function Page() {
                       groupTitle={group.title}
                       links={group.links}
                       card={settings.viewMode === "card"}
+                      openInNewTab={settings.linkOpenInNewTab}
                       fontSize={settings.linkFontSize}
                       gap={settings.linkCardGap}
                       sortable={!hasKeyword}
