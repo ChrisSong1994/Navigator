@@ -71,7 +71,7 @@ chrome_bookmarks_demo.html ──pnpm import:bookmarks──▶ global_original.
 - **自动轮播**：按 15 分钟 ~ 24 小时的间隔，在最近壁纸之间轮换，刷新后按时间片保持稳定；
 - **图片地址**：输入 `http(s)` 图片直链。
 
-无论哪种模式，配置里最终只保存 `settings.wallpaperUrl` 一个连接，不保存 Bing 返回的列表。扩展环境通过 service worker 请求 Bing 接口；普通网页环境直接请求，受 CORS 限制时会保留 `wallpaperUrl` 并降级，不影响导航正常使用。
+无论哪种模式，配置里最终只保存 `settings.wallpaperUrl` 一个连接，不保存 Bing 返回的列表。Bing 列表仅在浏览器扩展环境中通过 service worker 请求；普通网页开发环境不支持 Bing 列表，但「图片地址」模式仍可直接使用。
 
 ## 配置同步
 

@@ -2,8 +2,8 @@
  * Bing 每日壁纸客户端。
  *
  * 官方 HPImageArchive 通常只提供最近约 8 天数据，因此第一版按“最近可用壁纸”
- * 提供选择和自动轮播，不做任意历史日期。扩展环境经 service worker 请求以绕过 CORS，
- * 普通网页环境直接请求；失败时由调用方回退配置里的 wallpaperUrl。
+ * 提供选择和自动轮播，不做任意历史日期。Bing 列表只在浏览器扩展环境通过
+ * service worker 请求；普通网页不支持 Bing 列表，仍可使用配置里的自定义图片地址。
  */
 export interface BingWallpaper {
   /** YYYY-MM-DD */
@@ -37,7 +37,6 @@ interface BingMessageResponse {
 }
 
 const BING_API = 'https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8&mkt=zh-CN'
-
 function hasExtensionRuntime(): boolean {
   return typeof chrome !== 'undefined' && Boolean(chrome.runtime?.sendMessage)
 }
@@ -82,7 +81,7 @@ export function parseBingWallpapers(body: string): BingWallpaper[] {
     .filter((image): image is BingWallpaper => image !== null)
 }
 
-/** 获取 Bing 最近壁纸。普通网页若被 CORS 拦截，会抛出错误交给运行时降级。 */
+/** 获取 Bing 最近壁纸。仅扩展环境通过 service worker 请求，网页环境不支持。 */
 export async function fetchBingWallpapers(signal?: AbortSignal): Promise<BingWallpaper[]> {
   let body = ''
 
@@ -93,9 +92,7 @@ export async function fetchBingWallpapers(signal?: AbortSignal): Promise<BingWal
     }
     body = response.body
   } else {
-    const response = await fetch(BING_API, { signal, credentials: 'omit' })
-    if (!response.ok) throw new Error(`Bing 壁纸请求失败：HTTP ${response.status}`)
-    body = await response.text()
+    throw new Error('Bing 壁纸列表仅在浏览器扩展中可用，请安装扩展或改用图片地址')
   }
 
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')

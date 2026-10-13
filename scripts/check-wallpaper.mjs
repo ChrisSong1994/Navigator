@@ -3,7 +3,7 @@
  * Bing 壁纸解析冒烟测试：不访问网络，也不依赖浏览器环境。
  */
 import assert from 'node:assert/strict'
-import { parseBingWallpapers } from '../src/wallpaper/bing.ts'
+import { fetchBingWallpapers, parseBingWallpapers } from '../src/wallpaper/bing.ts'
 
 const cases = [
   {
@@ -56,4 +56,11 @@ for (const item of cases) {
   console.log(`✓ ${item.name}`)
 }
 
-console.log(`Bing 壁纸解析回归通过：${cases.length} 项`)
+await assert.rejects(
+  fetchBingWallpapers(),
+  /仅在浏览器扩展中可用/,
+  '普通网页环境必须明确提示 Bing 列表仅扩展可用，不能依赖外部代理',
+)
+console.log('✓ 普通网页环境不请求 Bing 列表')
+
+console.log(`Bing 壁纸回归通过：${cases.length} 项解析 + 1 项环境限制`)
