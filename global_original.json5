@@ -12,6 +12,11 @@
     searchEngine: "google", // google | baidu | bing
     searchOpenInNewTab: true, // 搜索结果 / 直接输入的网址是否新开窗口
     linkOpenInNewTab: true, // 点击导航链接是否新开窗口
+    wallpaperMode: "none", // none | bing | rotation | url
+    wallpaperUrl: "", // 当前生效的图片直链；Bing 选择 / 轮播会自动填入
+    wallpaperInterval: 60, // 自动轮播间隔（分钟）5~1440
+    wallpaperDim: 30, // 壁纸压暗程度 0~80，保证前景内容可读
+    wallpaperBlur: 0, // 壁纸模糊半径 0~20
   },
   groups: {
     "default": {

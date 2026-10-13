@@ -10,7 +10,8 @@
 - 跨设备配置同步：整个 `{ settings, groups }` 通过 `chrome.storage.sync` 分片持久化，同一 Chrome 账号自动同步
 - 全局搜索：Google / 百度 / 必应，支持搜索联想、`Cmd/Ctrl+K` 和 `/` 快捷键
 - 链接导航：卡片 / 列表两种展示、明暗模式跟随系统、分组目录、拖拽排序
-- 配置面板：标题 / Logo / 主题 / 主色 / 字号 / 间距 / 展示模式 / 搜索引擎 / 搜索与链接跳转方式 / 分组与链接增删改
+- 配置面板：标题 / Logo / 主题 / 主色 / 字号 / 间距 / 展示模式 / 搜索引擎 / 搜索与链接跳转方式 / 壁纸 / 分组与链接增删改
+- Bing 壁纸：关闭、从最近 8 天中选取、按间隔自动轮播、自定义图片地址；配置里只持久化一个图片直链
 - Chrome 书签双向同步：手动从书签栏 /「导航精灵」拉取，或把当前配置推送 / 覆盖到书签栏下的「导航精灵」文件夹
 - 数据导入导出：标准配置 JSON，以及 Chrome 书签 HTML
 
@@ -43,7 +44,12 @@ chrome_bookmarks_demo.html ──pnpm import:bookmarks──▶ global_original.
     viewMode: 'card',    // card | list
     searchEngine: 'google', // google | baidu | bing
     searchOpenInNewTab: true, // 搜索结果 / 直接输入的网址是否新开窗口
-    linkOpenInNewTab: true    // 点击导航链接是否新开窗口
+    linkOpenInNewTab: true,   // 点击导航链接是否新开窗口
+    wallpaperMode: 'none',    // none | bing | rotation | url
+    wallpaperUrl: '',         // 当前生效的图片直链
+    wallpaperInterval: 60,    // 自动轮播间隔（分钟）
+    wallpaperDim: 30,         // 壁纸压暗程度 0~80
+    wallpaperBlur: 0          // 壁纸模糊半径 0~20
   },
   groups: {
     常用: {
@@ -55,6 +61,17 @@ chrome_bookmarks_demo.html ──pnpm import:bookmarks──▶ global_original.
 ```
 
 执行 `pnpm refresh` 会校验 `global_original.json5` 并生成 `src/global_runtime.json`；页面运行时以内置配置为底、本地 / 同步配置优先做合并。
+
+## 壁纸
+
+配置面板的「壁纸」页提供四种模式：
+
+- **关闭**：保持原有纯色 / 主色光晕背景；
+- **Bing 选择**：从 Bing 官方最近约 8 天壁纸里点选一张；
+- **自动轮播**：按 15 分钟 ~ 24 小时的间隔，在最近壁纸之间轮换，刷新后按时间片保持稳定；
+- **图片地址**：输入 `http(s)` 图片直链。
+
+无论哪种模式，配置里最终只保存 `settings.wallpaperUrl` 一个连接，不保存 Bing 返回的列表。扩展环境通过 service worker 请求 Bing 接口；普通网页环境直接请求，受 CORS 限制时会保留 `wallpaperUrl` 并降级，不影响导航正常使用。
 
 ## 配置同步
 

@@ -78,6 +78,11 @@ function mergeSettings(runtime: NavSettings, local: NavSettings, base: NavSettin
     searchEngine: pick('searchEngine'),
     searchOpenInNewTab: pick('searchOpenInNewTab'),
     linkOpenInNewTab: pick('linkOpenInNewTab'),
+    wallpaperMode: pick('wallpaperMode'),
+    wallpaperUrl: pick('wallpaperUrl'),
+    wallpaperInterval: pick('wallpaperInterval'),
+    wallpaperDim: pick('wallpaperDim'),
+    wallpaperBlur: pick('wallpaperBlur'),
   }
 }
 

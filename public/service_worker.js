@@ -1,4 +1,18 @@
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === 'BING_WALLPAPER_FETCH') {
+    fetch('https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8&mkt=zh-CN', {
+      method: 'GET',
+      credentials: 'omit',
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error(`Bing 壁纸请求失败：HTTP ${response.status}`)
+        return response.text()
+      })
+      .then((body) => sendResponse({ ok: true, body }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }))
+    return true
+  }
+
   if (message?.type !== 'SEARCH_SUGGEST_FETCH') return false
 
   const url = message?.payload?.url

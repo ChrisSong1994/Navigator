@@ -51,6 +51,9 @@ jobs:
       - name: 合并规则冒烟测试
         run: pnpm check:merge
 
+      - name: Bing 壁纸解析回归
+        run: pnpm check:wallpaper
+
       - name: 代码检查
         run: pnpm lint
 

@@ -43,7 +43,7 @@ const { createMeta } = await import('../src/config/merge.ts')
 const { loadSnapshot, saveSnapshotNow, SYNC_MANIFEST_KEY } = await import('../src/config/storage.ts')
 
 const config = {
-  settings: { siteTitle: '新配置', siteLogo: '', primaryColor: '', linkFontSize: 14, linkCardGap: 16, themeMode: 'system', viewMode: 'card', searchEngine: 'google', searchOpenInNewTab: true, linkOpenInNewTab: true },
+  settings: { siteTitle: '新配置', siteLogo: '', primaryColor: '', linkFontSize: 14, linkCardGap: 16, themeMode: 'system', viewMode: 'card', searchEngine: 'google', searchOpenInNewTab: true, linkOpenInNewTab: true, wallpaperMode: 'none', wallpaperUrl: '', wallpaperInterval: 60, wallpaperDim: 30, wallpaperBlur: 0 },
   groups: { default: { title: '常用', links: [{ icon: '', href: 'https://new.example', text: 'New' }] } },
 }
 const meta = createMeta(config)

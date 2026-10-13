@@ -70,6 +70,41 @@ body {
   background-image: radial-gradient(1100px 380px at 50% -140px, color-mix(in srgb, var(--spirit-accent) 16%, transparent), transparent 70%);
 }
 
+/* 壁纸固定铺在最底层，页面结构与卡片仍保持原有层级与可读性 */
+.spirit-wallpaper {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.spirit-wallpaper img {
+  animation: spirit-wallpaper-in 500ms ease-out both;
+}
+
+.spirit-wallpaper-dim {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  transition: opacity 180ms ease-out;
+}
+
+.spirit-canvas > header,
+.spirit-canvas > main {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes spirit-wallpaper-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 /* 首屏骨架：扩展环境下配置只能异步读，读到之前先用占位块顶住，不画一版内置配置 */
 .spirit-skeleton {
   background-color: var(--spirit-inset);
@@ -88,6 +123,10 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .spirit-skeleton {
+    animation: none;
+  }
+
+  .spirit-wallpaper img {
     animation: none;
   }
 }

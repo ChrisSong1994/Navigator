@@ -18,10 +18,12 @@ import { GroupToc } from "./components/GroupToc.tsx";
 import { LinkFormModal } from "./components/LinkFormModal.tsx";
 import { LinkSortProvider } from "./components/LinkSortProvider.tsx";
 import { LinkGroupView } from "./components/LinkViews.tsx";
+import { WallpaperLayer } from "./components/WallpaperLayer.tsx";
 import { ConfigProvider } from "./config/ConfigProvider.tsx";
 import { useConfig } from "./config/configContext.ts";
 import { DEFAULT_PRIMARY_COLOR } from "./config/schema.ts";
 import { useResolvedTheme } from "./hooks/useResolvedTheme.ts";
+import { WallpaperProvider } from "./wallpaper/WallpaperProvider.tsx";
 
 /** 预览区里的虚线按钮（新增分组 / 空分组加链接）：底色由调用方按所在层级给 */
 const DASHED_TILE =
@@ -61,7 +63,9 @@ function ThemedShell() {
       theme={antdThemeConfig}
     >
       <AntApp>
-        <Page />
+        <WallpaperProvider>
+          <Page />
+        </WallpaperProvider>
       </AntApp>
     </AntConfigProvider>
   );
@@ -249,6 +253,7 @@ function Page() {
 
   return (
     <div className="spirit-canvas min-h-screen">
+      <WallpaperLayer dim={settings.wallpaperDim} blur={settings.wallpaperBlur} />
       <AppHeader
         keyword={keyword}
         onKeywordChange={setKeyword}

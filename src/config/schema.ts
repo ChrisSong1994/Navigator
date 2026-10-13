@@ -12,6 +12,7 @@
 export type ThemeMode = 'system' | 'light' | 'dark'
 export type ViewMode = 'card' | 'list'
 export type SearchEngine = 'google' | 'baidu' | 'bing'
+export type WallpaperMode = 'none' | 'bing' | 'rotation' | 'url'
 
 export interface NavLink {
   /** base64 data URL 或图片地址，空串表示使用首字母色块兜底 */
@@ -41,6 +42,16 @@ export interface NavSettings {
   searchOpenInNewTab: boolean
   /** 导航分组里的链接是否在新窗口打开 */
   linkOpenInNewTab: boolean
+  /** 壁纸模式：关闭 / Bing 单张 / Bing 自动轮播 / 自定义地址 */
+  wallpaperMode: WallpaperMode
+  /** 当前生效的图片直链；Bing 轮播和选择模式都会落成这个字段 */
+  wallpaperUrl: string
+  /** 自动轮播间隔（分钟） */
+  wallpaperInterval: number
+  /** 壁纸压暗程度 0~80，保证前景文字可读 */
+  wallpaperDim: number
+  /** 壁纸模糊半径 0~20 */
+  wallpaperBlur: number
 }
 
 export interface NavConfig {
@@ -50,7 +61,12 @@ export interface NavConfig {
 
 export const LINK_FONT_SIZE_RANGE: readonly [number, number] = [12, 20]
 export const LINK_CARD_GAP_RANGE: readonly [number, number] = [4, 48]
+export const WALLPAPER_INTERVAL_RANGE: readonly [number, number] = [5, 1440]
+export const WALLPAPER_DIM_RANGE: readonly [number, number] = [0, 80]
+export const WALLPAPER_BLUR_RANGE: readonly [number, number] = [0, 20]
+export const WALLPAPER_URL_MAX_LENGTH = 2048
 export const DEFAULT_PRIMARY_COLOR = '#2f54eb'
+export const DEFAULT_WALLPAPER_INTERVAL = 60
 
 export const DEFAULT_SETTINGS: NavSettings = {
   siteTitle: '导航精灵',
@@ -63,6 +79,11 @@ export const DEFAULT_SETTINGS: NavSettings = {
   searchEngine: 'google',
   searchOpenInNewTab: true,
   linkOpenInNewTab: true,
+  wallpaperMode: 'none',
+  wallpaperUrl: '',
+  wallpaperInterval: DEFAULT_WALLPAPER_INTERVAL,
+  wallpaperDim: 30,
+  wallpaperBlur: 0,
 }
 
 export const DEFAULT_CONFIG: NavConfig = {
@@ -73,6 +94,7 @@ export const DEFAULT_CONFIG: NavConfig = {
 const THEME_MODES: readonly ThemeMode[] = ['system', 'light', 'dark']
 const VIEW_MODES: readonly ViewMode[] = ['card', 'list']
 const SEARCH_ENGINES: readonly SearchEngine[] = ['google', 'baidu', 'bing']
+const WALLPAPER_MODES: readonly WallpaperMode[] = ['none', 'bing', 'rotation', 'url']
 
 export interface ValidationIssue {
   /** 出问题的配置路径，例如 groups.学习.links[3].href */
@@ -177,6 +199,39 @@ export function parseConfig(input: unknown): ParseResult {
           settings.linkOpenInNewTab = raw.linkOpenInNewTab
         }
       }
+      if (raw.wallpaperMode !== undefined) {
+        if (typeof raw.wallpaperMode !== 'string' || !WALLPAPER_MODES.includes(raw.wallpaperMode as WallpaperMode)) {
+          error('settings.wallpaperMode', `wallpaperMode 只能是 ${WALLPAPER_MODES.join(' / ')}`)
+        } else {
+          settings.wallpaperMode = raw.wallpaperMode as WallpaperMode
+        }
+      }
+      if (raw.wallpaperUrl !== undefined) {
+        if (typeof raw.wallpaperUrl !== 'string') {
+          error('settings.wallpaperUrl', 'wallpaperUrl 必须是图片地址字符串')
+        } else {
+          const url = raw.wallpaperUrl.trim()
+          if (url.length > WALLPAPER_URL_MAX_LENGTH) {
+            error('settings.wallpaperUrl', `wallpaperUrl 不能超过 ${WALLPAPER_URL_MAX_LENGTH} 个字符`)
+          } else if (url && !isAllowedWallpaperUrl(url)) {
+            error('settings.wallpaperUrl', 'wallpaperUrl 必须是 https / http 图片地址或 Bing 返回的 /th?... 地址')
+          } else {
+            settings.wallpaperUrl = url
+          }
+        }
+      }
+      if (raw.wallpaperInterval !== undefined) {
+        const value = readRange(raw.wallpaperInterval, 'settings.wallpaperInterval', WALLPAPER_INTERVAL_RANGE, error)
+        if (value !== null) settings.wallpaperInterval = value
+      }
+      if (raw.wallpaperDim !== undefined) {
+        const value = readRange(raw.wallpaperDim, 'settings.wallpaperDim', WALLPAPER_DIM_RANGE, error)
+        if (value !== null) settings.wallpaperDim = value
+      }
+      if (raw.wallpaperBlur !== undefined) {
+        const value = readRange(raw.wallpaperBlur, 'settings.wallpaperBlur', WALLPAPER_BLUR_RANGE, error)
+        if (value !== null) settings.wallpaperBlur = value
+      }
     }
   }
 
@@ -273,6 +328,25 @@ function readRange(value: unknown, path: string, [min, max]: readonly [number, n
   return Math.round(value)
 }
 
+/** 配置只接受可直接放进 <img src> 的地址；Bing API 返回的相对地址在客户端会归一化为完整 https 地址 */
+export function isAllowedWallpaperUrl(value: string): boolean {
+  if (value.startsWith('/')) return true
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' || url.protocol === 'http:'
+  } catch {
+    return false
+  }
+}
+
+/** 把配置里的 Bing 相对地址补成可跨页面加载的绝对地址 */
+export function resolveWallpaperUrl(value: string): string {
+  if (!value) return ''
+  if (/^https?:\/\//i.test(value) || value.startsWith('data:image/')) return value
+  if (value.startsWith('/')) return `https://www.bing.com${value}`
+  return value
+}
+
 export function describeIssue(issue: ValidationIssue): string {
   const label = issue.level === 'error' ? '错误' : '警告'
   return issue.path ? `[${label}] ${issue.path}: ${issue.message}` : `[${label}] ${issue.message}`
@@ -303,6 +377,11 @@ function toCanonical(config: NavConfig) {
       searchEngine: config.settings.searchEngine,
       searchOpenInNewTab: config.settings.searchOpenInNewTab,
       linkOpenInNewTab: config.settings.linkOpenInNewTab,
+      wallpaperMode: config.settings.wallpaperMode,
+      wallpaperUrl: config.settings.wallpaperUrl,
+      wallpaperInterval: config.settings.wallpaperInterval,
+      wallpaperDim: config.settings.wallpaperDim,
+      wallpaperBlur: config.settings.wallpaperBlur,
     },
     groups,
   }

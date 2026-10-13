@@ -24,7 +24,7 @@ const test = (name, fn) => {
 
 const link = (href, text, icon = '') => ({ icon, href, text })
 const runtime = {
-  settings: { siteTitle: '内置标题', siteLogo: '', primaryColor: '', linkFontSize: 14, linkCardGap: 16, themeMode: 'system', viewMode: 'card', searchEngine: 'google', searchOpenInNewTab: true, linkOpenInNewTab: true },
+  settings: { siteTitle: '内置标题', siteLogo: '', primaryColor: '', linkFontSize: 14, linkCardGap: 16, themeMode: 'system', viewMode: 'card', searchEngine: 'google', searchOpenInNewTab: true, linkOpenInNewTab: true, wallpaperMode: 'none', wallpaperUrl: '', wallpaperInterval: 60, wallpaperDim: 30, wallpaperBlur: 0 },
   groups: {
     default: { title: '常用', links: [link('https://a.com', 'A'), link('https://b.com', 'B')] },
     学习: { title: '学习', links: [link('https://c.com', 'C')] },

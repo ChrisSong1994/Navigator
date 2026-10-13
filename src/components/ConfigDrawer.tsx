@@ -12,6 +12,7 @@ import { DEFAULT_PRIMARY_COLOR, LINK_CARD_GAP_RANGE, LINK_FONT_SIZE_RANGE } from
 import type { NavGroup, ThemeMode, ViewMode } from '../config/schema.ts'
 import { readConfigText } from '../config/storage.ts'
 import { GroupEditor } from './GroupEditor.tsx'
+import { WallpaperPanel } from './WallpaperPanel.tsx'
 
 /** 待处理的导入内容：文件只读一次文本，Chrome 书签则直接带解析结果，预览逻辑保持一致 */
 type PendingUpload =
@@ -446,6 +447,7 @@ export function ConfigDrawer({ open, onClose }: { open: boolean; onClose: () => 
         <Tabs
           items={[
             { key: 'appearance', label: '外观', children: appearance },
+            { key: 'wallpaper', label: '壁纸', children: <WallpaperPanel /> },
             { key: 'groups', label: '分组', children: groupTab },
             { key: 'data', label: '数据', children: dataTab },
           ]}

@@ -9,7 +9,12 @@
     "viewMode": "card",
     "searchEngine": "google",
     "searchOpenInNewTab": true,
-    "linkOpenInNewTab": true
+    "linkOpenInNewTab": true,
+    "wallpaperMode": "none",
+    "wallpaperUrl": "",
+    "wallpaperInterval": 60,
+    "wallpaperDim": 30,
+    "wallpaperBlur": 0
   },
   "groups": {
     "default": {
