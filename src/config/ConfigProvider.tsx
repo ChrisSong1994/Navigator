@@ -42,16 +42,20 @@ function mergeInitial(local: NavConfig | null, meta: LocalMeta | null): ConfigSt
   return { config: result.config, meta: result.meta, notice: local !== null && result.merged }
 }
 
-function initialState(): ConfigState {
+/** 首屏状态：同步种子（localStorage 镜像）合并内置配置，并报告种子是否命中 */
+function initialState(): { state: ConfigState; seeded: boolean } {
   const snapshot = loadLocal()
-  return mergeInitial(snapshot.config, snapshot.meta)
+  return { state: mergeInitial(snapshot.config, snapshot.meta), seeded: snapshot.config !== null }
 }
 
 export function ConfigProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<ConfigState>(initialState)
+  const [boot] = useState(initialState)
+  const [state, setState] = useState(boot.state)
   const [storageError, setStorageError] = useState<string | null>(null)
   const storageKind = storageMode()
   const [storageReady, setStorageReady] = useState(() => storageKind === 'local')
+  /** 首屏是否有可用配置：同步种子命中，或异步存储已读完。false 时页面先渲染骨架 */
+  const configReady = storageReady || boot.seeded
   const { config, meta } = state
   // 保存状态只按引用判断：配置是 immutable 更新，同一份状态重复渲染不会重复写。
   // 以前这里每次 render 都全量 serializeConfig，属于明显的输入 / 拖拽卡顿来源。
@@ -412,6 +416,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       storageError,
       storageMode: storageKind,
       storageReady,
+      configReady,
       dismissMergeNotice: () => setState((prev) => ({ ...prev, notice: false })),
       updateSettings,
       addGroup,
@@ -436,6 +441,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       storageError,
       storageKind,
       storageReady,
+      configReady,
       updateSettings,
       addGroup,
       renameGroup,

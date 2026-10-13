@@ -290,9 +290,16 @@ export async function loadSnapshot(): Promise<LocalSnapshot> {
   return readSyncSnapshot()
 }
 
-/** 兼容旧调用：开发环境同步读取，扩展环境返回 null，由 ConfigProvider 的异步初始化接管 */
+/**
+ * 首屏同步种子：读 localStorage 里的完整快照。
+ *
+ * 扩展环境的 chrome.storage 只能异步读，这里要是返回空快照，首帧就只能拿内置配置渲染
+ * （卡片视图、内置分组），等 loadSnapshot() 回来再跳成用户配置 —— 视图模式和分组都会先闪一版。
+ * saveSnapshot 在扩展环境下同样会同步写这份镜像（见文件头注释），所以它通常就是最新的一份；
+ * 之后 readSyncSnapshot 仍用 pickNewestSnapshot 按 updatedAt 比新旧，旧镜像顶不掉更新的数据。
+ * 与 public/theme-init.js 同思路：先信同步镜像拿到首帧，异步结果再纠正。
+ */
 export function loadLocal(): LocalSnapshot {
-  if (isExtensionStorageAvailable()) return emptySnapshot()
   return readWebSnapshot()
 }
 

@@ -37,6 +37,11 @@ export interface ConfigContextValue {
   storageMode: StorageArea
   /** chrome.storage 异步初始化是否完成；localStorage 环境恒为 true */
   storageReady: boolean
+  /**
+   * 首屏是否有可用配置：localStorage 同步种子命中，或异步存储已读完。
+   * 为 false 时页面先渲染骨架，避免用内置配置画一版（卡片视图、内置分组）再跳成用户配置。
+   */
+  configReady: boolean
   dismissMergeNotice: () => void
   updateSettings: (patch: Partial<NavSettings>) => void
   /** 新建分组，返回新分组 id（不传标题则用「新分组 N」） */

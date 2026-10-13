@@ -70,6 +70,28 @@ body {
   background-image: radial-gradient(1100px 380px at 50% -140px, color-mix(in srgb, var(--spirit-accent) 16%, transparent), transparent 70%);
 }
 
+/* 首屏骨架：扩展环境下配置只能异步读，读到之前先用占位块顶住，不画一版内置配置 */
+.spirit-skeleton {
+  background-color: var(--spirit-inset);
+  animation: spirit-skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes spirit-skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spirit-skeleton {
+    animation: none;
+  }
+}
+
 /* 分组很多时（当前 1000+ 链接）跳过屏幕外分组的渲染，滚动依然顺滑 */
 .spirit-section {
   content-visibility: auto;

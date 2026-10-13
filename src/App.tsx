@@ -101,8 +101,55 @@ function NewGroupModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+/** 骨架占位块：形状（高 / 宽 / 圆角）由调用方给 */
+function SkeletonBar({ className }: { className: string }) {
+  return <div className={`spirit-skeleton rounded-md ${className}`} />;
+}
+
+/**
+ * 首屏骨架：只在「扩展环境 + 本机没有同步种子」（首次安装、清了站点数据、换设备）时出现。
+ * 高度按真实布局给，读到配置后换成真内容不会跳版。
+ */
+function PageSkeleton() {
+  return (
+    <div className="spirit-canvas min-h-screen" aria-busy="true" aria-label="正在读取配置">
+      <header className="border-b border-[var(--spirit-border)] bg-[var(--spirit-surface)]/90">
+        <div className="mx-auto flex max-w-[1920px] items-center gap-4 px-6 py-3">
+          <SkeletonBar className="h-5 w-32" />
+          <SkeletonBar className="h-4 w-20" />
+          <div className="ml-auto flex items-center gap-2">
+            <SkeletonBar className="h-8 w-[240px] rounded-lg" />
+            <SkeletonBar className="h-8 w-8 rounded-lg" />
+            <SkeletonBar className="h-8 w-8 rounded-lg" />
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-[1704px] px-6 pb-20 pt-5 lg:pl-[264px]">
+        <div className="mb-5 px-0 pt-1">
+          <SkeletonBar className="h-[46px] rounded-xl" />
+        </div>
+        {[0, 1].map((index) => (
+          <div
+            key={index}
+            className="mb-4 rounded-2xl bg-[var(--spirit-surface)] p-4 sm:p-5"
+          >
+            <SkeletonBar className="mb-3 h-5 w-28" />
+            <div className="flex flex-col gap-2">
+              {[0, 1, 2].map((item) => (
+                <SkeletonBar key={item} className="h-9 rounded-[10px]" />
+              ))}
+            </div>
+          </div>
+        ))}
+        <SkeletonBar className="mt-1 h-14 rounded-xl" />
+      </main>
+    </div>
+  );
+}
+
 function Page() {
-  const { settings, groups, groupIds } = useConfig();
+  const { settings, groups, groupIds, configReady } = useConfig();
   const [keyword, setKeyword] = useState("");
   const [filterKeyword, setFilterKeyword] = useState("");
   const filterTimerRef = useRef<number | null>(null);
@@ -195,6 +242,10 @@ function Page() {
       ?.scrollIntoView({ behavior: "smooth", block: "start" });
     setActiveGroupId(id);
   }, []);
+
+  // 扩展环境且本机还没有同步种子时，配置只能异步读：先渲染骨架，
+  // 不用内置配置画一版（卡片视图、内置分组）再跳成用户配置
+  if (!configReady) return <PageSkeleton />;
 
   return (
     <div className="spirit-canvas min-h-screen">
