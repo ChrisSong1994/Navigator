@@ -140,6 +140,20 @@ pnpm dev
 
 首次使用需要在仓库 **Settings → Pages → Source** 选择 **GitHub Actions**。
 
+## 版本发布
+
+使用 `pnpm release` 更新 `public/manifest.json` 的版本，并自动提交、创建同名 `vX.Y.Z` tag、推送当前分支和 tag：
+
+```bash
+pnpm release             # patch 递增，例如 0.0.3 → 0.0.4
+pnpm release minor       # minor 递增，例如 0.0.3 → 0.1.0
+pnpm release major       # major 递增，例如 0.0.3 → 1.0.0
+pnpm release 1.2.0       # 指定明确版本
+pnpm release patch --dry-run # 只预览计划，不修改文件和推送
+```
+
+发布前请确保工作区中没有未提交的已跟踪文件变更。推送 tag 后，`.github/workflows/release-extension.yml` 会校验 manifest 版本并构建、发布 Chrome / Edge 扩展包。
+
 ## 常用命令
 
 ```bash

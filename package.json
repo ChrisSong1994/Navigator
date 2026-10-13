@@ -13,7 +13,8 @@
     "import:bookmarks": "node scripts/import-bookmarks.mjs",
     "build:extension": "tsc -b && vite build && node scripts/build-extension.mjs",
     "check:merge": "node scripts/check-merge.mjs",
-    "check:storage": "node scripts/check-storage.mjs"
+    "check:storage": "node scripts/check-storage.mjs",
+    "release": "node scripts/release.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^6.3.4",
