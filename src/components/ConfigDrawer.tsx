@@ -281,6 +281,30 @@ export function ConfigDrawer({ open, onClose }: { open: boolean; onClose: () => 
           ]}
         />
       </SettingRow>
+
+      <SettingRow label="搜索跳转" hint="搜索或直接输入网址时">
+        <Segmented
+          block
+          value={settings.searchOpenInNewTab ? 'new' : 'current'}
+          onChange={(value) => updateSettings({ searchOpenInNewTab: value === 'new' })}
+          options={[
+            { label: '新窗口', value: 'new' },
+            { label: '当前窗口', value: 'current' },
+          ]}
+        />
+      </SettingRow>
+
+      <SettingRow label="链接跳转" hint="点击导航分组里的链接时">
+        <Segmented
+          block
+          value={settings.linkOpenInNewTab ? 'new' : 'current'}
+          onChange={(value) => updateSettings({ linkOpenInNewTab: value === 'new' })}
+          options={[
+            { label: '新窗口', value: 'new' },
+            { label: '当前窗口', value: 'current' },
+          ]}
+        />
+      </SettingRow>
     </div>
   )
 

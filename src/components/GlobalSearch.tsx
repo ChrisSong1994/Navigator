@@ -16,8 +16,12 @@ function EngineIcon({ engine, className }: { engine: SearchEngine; className?: s
   return <img src={assets.icon} alt="" aria-hidden="true" className={className} />
 }
 
-function openSearch(url: string) {
-  window.open(url, '_blank', 'noopener,noreferrer')
+function openSearch(url: string, openInNewTab: boolean) {
+  if (openInNewTab) {
+    window.open(url, '_blank', 'noopener,noreferrer')
+  } else {
+    window.location.assign(url)
+  }
 }
 
 /** 新标签页主搜索框：Enter 搜索 / 打开网址，方向键选择联想词。 */
@@ -27,8 +31,11 @@ export function GlobalSearch() {
   const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([])
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
+  const [searchWidth, setSearchWidth] = useState<number | null>(null)
   const inputRef = useRef<InputRef>(null)
+  const searchBoxRef = useRef<HTMLDivElement>(null)
   const requestRef = useRef(0)
+  const composingRef = useRef(false)
 
   const engine = getSearchEngine(settings.searchEngine)
   const engineOptions = useMemo(
@@ -49,13 +56,23 @@ export function GlobalSearch() {
     (text?: string) => {
       const keyword = (text ?? value).trim()
       if (!keyword) return
-      openSearch(buildNavigationUrl(settings.searchEngine, keyword))
+      openSearch(buildNavigationUrl(settings.searchEngine, keyword), settings.searchOpenInNewTab)
       setOpen(false)
       setSuggestions([])
       setActiveIndex(-1)
     },
-    [settings.searchEngine, value],
+    [settings.searchEngine, settings.searchOpenInNewTab, value],
   )
+
+  useEffect(() => {
+    const element = searchBoxRef.current
+    if (!element) return
+    const updateWidth = () => setSearchWidth(element.getBoundingClientRect().width)
+    updateWidth()
+    const observer = new ResizeObserver(updateWidth)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
     const onShortcut = (event: KeyboardEvent) => {
@@ -107,8 +124,12 @@ export function GlobalSearch() {
         items: visibleSuggestions.map((item, index) => ({
           key: String(index),
           label: (
-            <span className={index === activeIndex ? 'font-medium text-[var(--spirit-accent)]' : undefined}>
-              {item.keyword}
+            <span className={`flex min-w-0 items-center gap-2 ${index === activeIndex ? 'font-medium text-[var(--spirit-accent)]' : ''}`}>
+              <SearchOutlined
+                aria-hidden="true"
+                className={`shrink-0 text-[13px] ${index === activeIndex ? 'text-[var(--spirit-accent)]' : 'text-[var(--spirit-muted)]'}`}
+              />
+              <span className="truncate">{item.keyword}</span>
             </span>
           ),
         })),
@@ -128,9 +149,9 @@ export function GlobalSearch() {
         menu={menu}
         trigger={[]}
         placement="bottom"
-        styles={{ root: { width: '100%' } }}
+        styles={{ root: { width: searchWidth ?? '100%', minWidth: searchWidth ?? undefined, maxWidth: searchWidth ?? undefined } }}
       >
-        <div className="flex rounded-xl border border-[var(--spirit-border)] bg-[var(--spirit-surface)] p-1.5 shadow-[var(--spirit-shadow)] transition-colors focus-within:border-[var(--spirit-accent)] items-center">
+        <div ref={searchBoxRef} className="flex items-center rounded-xl border border-[var(--spirit-border)] bg-[var(--spirit-surface)] p-1.5 shadow-[var(--spirit-shadow)] transition-colors focus-within:border-[var(--spirit-accent)]">
           <Dropdown
             trigger={['click']}
             menu={{
@@ -160,6 +181,8 @@ export function GlobalSearch() {
             onChange={(event) => setValue(event.target.value)}
             onFocus={() => visibleSuggestions.length > 0 && setOpen(true)}
             onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+            onCompositionStart={() => { composingRef.current = true }}
+            onCompositionEnd={() => { composingRef.current = false }}
             onKeyDown={(event) => {
               if (event.key === 'ArrowDown' && visibleSuggestions.length > 0) {
                 event.preventDefault()
@@ -170,6 +193,8 @@ export function GlobalSearch() {
                 setOpen(true)
                 setActiveIndex((index) => (index - 1 + visibleSuggestions.length) % visibleSuggestions.length)
               } else if (event.key === 'Enter') {
+                // 中文输入法组词阶段的 Enter 用于上屏，不能当作搜索提交。
+                if (composingRef.current || event.nativeEvent.isComposing || event.keyCode === 229) return
                 event.preventDefault()
                 submit(activeIndex >= 0 ? visibleSuggestions[activeIndex]?.keyword : value)
               } else if (event.key === 'Escape') {

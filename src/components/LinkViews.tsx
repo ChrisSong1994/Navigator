@@ -19,12 +19,13 @@ interface LinkItemProps {
   index: number
   fontSize: number
   card: boolean
+  openInNewTab: boolean
   /** 搜索过滤时列表只是子集，关闭拖拽，避免用过滤后的下标改坏真实顺序 */
   sortable: boolean
   onRemove: (groupId: string, href: string) => void
 }
 
-function LinkItemBase({ link, groupId, groupTitle, index, fontSize, card, sortable, onRemove }: LinkItemProps) {
+function LinkItemBase({ link, groupId, groupTitle, index, fontSize, card, openInNewTab, sortable, onRemove }: LinkItemProps) {
   const { modal } = App.useApp()
   const { activeId } = useLinkSortSnapshot()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -93,8 +94,8 @@ function LinkItemBase({ link, groupId, groupTitle, index, fontSize, card, sortab
           {...attributes}
           {...listeners}
           href={link.href}
-          target="_blank"
-          rel="noreferrer noopener"
+          target={openInNewTab ? '_blank' : '_self'}
+          rel={openInNewTab ? 'noreferrer noopener' : undefined}
           title={link.href}
           draggable={false}
           style={{ fontSize }}
@@ -143,13 +144,14 @@ interface LinkGroupViewProps {
   groupTitle: string
   links: NavLink[]
   card: boolean
+  openInNewTab: boolean
   fontSize: number
   gap: number
   sortable: boolean
 }
 
 /** 卡片模式：自适应网格；列表模式：一整个面板内分行 */
-export const LinkGroupView = memo(function LinkGroupView({ groupId, groupTitle, links, card, fontSize, gap, sortable }: LinkGroupViewProps) {
+export const LinkGroupView = memo(function LinkGroupView({ groupId, groupTitle, links, card, openInNewTab, fontSize, gap, sortable }: LinkGroupViewProps) {
   const { removeLink } = useConfig()
   const sortableIds = links.map((_, index) => linkSortableId(groupId, index))
 
@@ -159,14 +161,14 @@ export const LinkGroupView = memo(function LinkGroupView({ groupId, groupTitle, 
       style={{ gap, gridTemplateColumns: `repeat(auto-fill, minmax(${Math.max(168, fontSize * 13)}px, 1fr))` }}
     >
       {links.map((link, index) => (
-        <LinkItem key={`${link.href}-${index}`} link={link} groupId={groupId} groupTitle={groupTitle} index={index} fontSize={fontSize} card sortable={sortable} onRemove={removeLink} />
+        <LinkItem key={`${link.href}-${index}`} link={link} groupId={groupId} groupTitle={groupTitle} index={index} fontSize={fontSize} card openInNewTab={openInNewTab} sortable={sortable} onRemove={removeLink} />
       ))}
     </div>
   ) : (
     <div className="overflow-hidden rounded-xl bg-[var(--spirit-inset)]">
       {links.map((link, index) => (
         <div key={`${link.href}-${index}`} className={index > 0 ? 'border-t border-[var(--spirit-border)]' : undefined}>
-          <LinkItem link={link} groupId={groupId} groupTitle={groupTitle} index={index} fontSize={fontSize} card={false} sortable={sortable} onRemove={removeLink} />
+          <LinkItem link={link} groupId={groupId} groupTitle={groupTitle} index={index} fontSize={fontSize} card={false} openInNewTab={openInNewTab} sortable={sortable} onRemove={removeLink} />
         </div>
       ))}
     </div>

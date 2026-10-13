@@ -7,7 +7,9 @@
     "linkCardGap": 16,
     "themeMode": "system",
     "viewMode": "card",
-    "searchEngine": "google"
+    "searchEngine": "google",
+    "searchOpenInNewTab": true,
+    "linkOpenInNewTab": true
   },
   "groups": {
     "default": {

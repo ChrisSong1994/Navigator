@@ -37,6 +37,10 @@ export interface NavSettings {
   viewMode: ViewMode
   /** 新标签页主搜索框使用的搜索引擎 */
   searchEngine: SearchEngine
+  /** 搜索结果 / 直接输入的网址是否在新窗口打开 */
+  searchOpenInNewTab: boolean
+  /** 导航分组里的链接是否在新窗口打开 */
+  linkOpenInNewTab: boolean
 }
 
 export interface NavConfig {
@@ -57,6 +61,8 @@ export const DEFAULT_SETTINGS: NavSettings = {
   themeMode: 'system',
   viewMode: 'card',
   searchEngine: 'google',
+  searchOpenInNewTab: true,
+  linkOpenInNewTab: true,
 }
 
 export const DEFAULT_CONFIG: NavConfig = {
@@ -155,6 +161,20 @@ export function parseConfig(input: unknown): ParseResult {
           error('settings.searchEngine', `searchEngine 只能是 ${SEARCH_ENGINES.join(' / ')}`)
         } else {
           settings.searchEngine = raw.searchEngine as SearchEngine
+        }
+      }
+      if (raw.searchOpenInNewTab !== undefined) {
+        if (typeof raw.searchOpenInNewTab !== 'boolean') {
+          error('settings.searchOpenInNewTab', 'searchOpenInNewTab 必须是布尔值')
+        } else {
+          settings.searchOpenInNewTab = raw.searchOpenInNewTab
+        }
+      }
+      if (raw.linkOpenInNewTab !== undefined) {
+        if (typeof raw.linkOpenInNewTab !== 'boolean') {
+          error('settings.linkOpenInNewTab', 'linkOpenInNewTab 必须是布尔值')
+        } else {
+          settings.linkOpenInNewTab = raw.linkOpenInNewTab
         }
       }
     }
@@ -281,6 +301,8 @@ function toCanonical(config: NavConfig) {
       themeMode: config.settings.themeMode,
       viewMode: config.settings.viewMode,
       searchEngine: config.settings.searchEngine,
+      searchOpenInNewTab: config.settings.searchOpenInNewTab,
+      linkOpenInNewTab: config.settings.linkOpenInNewTab,
     },
     groups,
   }

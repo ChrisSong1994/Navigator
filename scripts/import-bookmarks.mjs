@@ -79,6 +79,9 @@ function render() {
     `    linkCardGap: ${DEFAULT_SETTINGS.linkCardGap}, // 卡片之间 / 列表行之间的间距 4~48`,
     '    themeMode: "system", // system | light | dark',
     '    viewMode: "card", // card | list',
+    '    searchEngine: "google", // google | baidu | bing',
+    '    searchOpenInNewTab: true, // 搜索结果 / 直接输入的网址是否新开窗口',
+    '    linkOpenInNewTab: true, // 点击导航链接是否新开窗口',
     '  },',
     '  groups: {',
   ]

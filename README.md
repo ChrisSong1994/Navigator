@@ -10,7 +10,7 @@
 - 跨设备配置同步：整个 `{ settings, groups }` 通过 `chrome.storage.sync` 分片持久化，同一 Chrome 账号自动同步
 - 全局搜索：Google / 百度 / 必应，支持搜索联想、`Cmd/Ctrl+K` 和 `/` 快捷键
 - 链接导航：卡片 / 列表两种展示、明暗模式跟随系统、分组目录、拖拽排序
-- 配置面板：标题 / Logo / 主题 / 主色 / 字号 / 间距 / 展示模式 / 搜索引擎 / 分组与链接增删改
+- 配置面板：标题 / Logo / 主题 / 主色 / 字号 / 间距 / 展示模式 / 搜索引擎 / 搜索与链接跳转方式 / 分组与链接增删改
 - Chrome 书签双向同步：手动从书签栏 /「导航精灵」拉取，或把当前配置推送 / 覆盖到书签栏下的「导航精灵」文件夹
 - 数据导入导出：标准配置 JSON，以及 Chrome 书签 HTML
 
@@ -41,7 +41,9 @@ chrome_bookmarks_demo.html ──pnpm import:bookmarks──▶ global_original.
     linkCardGap: 16,
     themeMode: 'system', // system | light | dark
     viewMode: 'card',    // card | list
-    searchEngine: 'google' // google | baidu | bing
+    searchEngine: 'google', // google | baidu | bing
+    searchOpenInNewTab: true, // 搜索结果 / 直接输入的网址是否新开窗口
+    linkOpenInNewTab: true    // 点击导航链接是否新开窗口
   },
   groups: {
     常用: {
@@ -66,9 +68,10 @@ chrome_bookmarks_demo.html ──pnpm import:bookmarks──▶ global_original.
 
 顶部主搜索框使用配置里的 `settings.searchEngine`（默认 Google）：
 
-- 输入内容后 Enter / 点击搜索按钮 → 新窗口打开搜索结果
+- 输入内容后 Enter / 点击搜索按钮 → 按 `searchOpenInNewTab` 在新窗口或当前窗口打开搜索结果
 - 输入 `https://...` 或裸域名 → 直接打开对应网址
 - 输入时显示搜索引擎联想词，支持上下方向键与 Enter
+- 中文输入法组词时按 Enter 只上屏，不会触发搜索
 - `Cmd/Ctrl+K` 或 `/` 聚焦搜索框
 
 联想请求在扩展环境经 `service_worker.js` 代理，避免页面跨域限制；普通网页环境尝试直接请求，失败时静默降级为普通搜索。
