@@ -37,6 +37,14 @@ function readLinkId(id: string | number): SortableLinkData | null {
   return { groupId: decodeURIComponent(encodedGroupId), index }
 }
 
+/** 从拖拽的原始按下事件定位到实际可点击元素（链接 / 按钮），用于只抑制那一个元素的补发 click。 */
+function getInteractiveTarget(event: Event): HTMLElement | null {
+  const target = event.target
+  if (!(target instanceof Element)) return null
+  const interactive = target.closest('a[href], button, [role="button"]')
+  return interactive instanceof HTMLElement ? interactive : null
+}
+
 /**
  * 页面链接的拖拽容器。
  *
@@ -46,15 +54,16 @@ function readLinkId(id: string | number): SortableLinkData | null {
  */
 export function LinkSortProvider({ sortable, children }: { sortable: boolean; children: ReactNode }) {
   const { moveLinkTo } = useConfig()
-  const suppressClickRef = useRef(false)
+  const suppressClickTargetRef = useRef<HTMLElement | null>(null)
   const suppressClickTimerRef = useRef<number | null>(null)
   const [activeId, setActiveId] = useState<string | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
       disabled: !sortable,
-      // 整条链接都是拖拽把手：短按仍然打开链接，按住后再移动才进入排序。
-      activationConstraint: { delay: 60, tolerance: 6 },
+      // 整条链接都是拖拽把手：只有指针明确移动后才进入排序。
+      // 不要用 delay：普通点击稍慢也会命中 delay，导致 click 被当成拖拽吞掉。
+      activationConstraint: { distance: 8 },
     }),
     useSensor(KeyboardSensor, {
       disabled: !sortable,
@@ -64,7 +73,14 @@ export function LinkSortProvider({ sortable, children }: { sortable: boolean; ch
 
   useEffect(() => {
     const suppressClick = (event: MouseEvent) => {
-      if (!suppressClickRef.current) return
+      const target = suppressClickTargetRef.current
+      if (!target || !(event.target instanceof Node) || !target.contains(event.target)) return
+      // 只吞掉刚被拖拽的那条链接随后补发的一次 click；点击其他链接/按钮不受影响。
+      suppressClickTargetRef.current = null
+      if (suppressClickTimerRef.current !== null) {
+        window.clearTimeout(suppressClickTimerRef.current)
+        suppressClickTimerRef.current = null
+      }
       event.preventDefault()
       event.stopPropagation()
     }
@@ -76,23 +92,31 @@ export function LinkSortProvider({ sortable, children }: { sortable: boolean; ch
     }
   }, [])
 
-  const onDragStart = useCallback(({ active }: DragStartEvent) => {
+  const onDragStart = useCallback(({ active, activatorEvent }: DragStartEvent) => {
+    suppressClickTargetRef.current = getInteractiveTarget(activatorEvent)
     setActiveId(String(active.id))
   }, [])
 
   const onDragCancel = useCallback(() => {
+    suppressClickTargetRef.current = null
+    if (suppressClickTimerRef.current !== null) {
+      window.clearTimeout(suppressClickTimerRef.current)
+      suppressClickTimerRef.current = null
+    }
     setActiveId(null)
   }, [])
 
   const onDragEnd = useCallback(
-    ({ active, over }: DragEndEvent) => {
+    ({ active, activatorEvent, over }: DragEndEvent) => {
       setActiveId(null)
       // dnd-kit 拖拽结束后浏览器可能仍补一个 click，挡掉这一下，避免顺手跳转。
-      suppressClickRef.current = true
+      // 只针对源链接，且 450ms 后自动失效：触摸端合成的 click 可能延迟约 300ms。
+      suppressClickTargetRef.current = getInteractiveTarget(activatorEvent)
       if (suppressClickTimerRef.current !== null) window.clearTimeout(suppressClickTimerRef.current)
       suppressClickTimerRef.current = window.setTimeout(() => {
-        suppressClickRef.current = false
-      }, 400)
+        suppressClickTargetRef.current = null
+        suppressClickTimerRef.current = null
+      }, 450)
 
       if (!sortable || !over) return
       const from = readLinkData(active.data.current) ?? readLinkId(active.id)
