@@ -1,4 +1,4 @@
-import { CodeOutlined } from '@ant-design/icons'
+import { BgColorsOutlined, CodeOutlined } from '@ant-design/icons'
 import { lazy } from 'react'
 import type { ComponentType, ReactNode } from 'react'
 
@@ -19,6 +19,13 @@ export interface ToolEntry {
  * lazy() 写在模块级的数组字面量里，只求值一次，组件引用是稳定的。
  */
 export const TOOLS: ToolEntry[] = [
+  {
+    key: 'color',
+    title: '颜色',
+    description: '取色 / HEX·RGB·CMYK·HSV·HSL 互转 / 颜色记录',
+    icon: <BgColorsOutlined />,
+    content: lazy(() => import('./Color/index.tsx')),
+  },
   {
     key: 'json',
     title: 'JSON',

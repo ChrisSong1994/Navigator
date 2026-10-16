@@ -1,0 +1,224 @@
+/**
+ * 颜色工具自己的样式。原项目是 pages/Color/index.module.less 加上 EditableInput / ToggleEditText
+ * 两个组件的样式，这里合成一份，类名统一带 color-tool- 前缀，不再往全局 index.css 里塞东西。
+ *
+ * 颜色一律走仓库的 --spirit-* token：原项目那套 rgb(218, 220, 224) / rgb(60, 64, 67) / #ccc 是写死的浅色，
+ * 深色模式下会白底黑字打架（Json 迁移已经踩过同一个坑）。取色面板和色相条本身是纯色彩渐变，
+ * 与主题无关，照原样。
+ */
+
+/* 竖着排：面板、记录按钮、记录列表，间距由 gap 给。按钮不能被拉满宽，所以是 flex-start */
+.color-tool-root {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+/* 面板、记录列表各占满一行 */
+.color-tool-picker,
+.color-tool-record {
+  width: 100%;
+}
+
+/* 取色面板 ---------------------------------------------------------------- */
+
+.color-tool-select {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+/* 左边那块当前色，原版 30% × 228px、直角，这里给个 6px 圆角跟面板对齐 */
+.color-tool-swatch {
+  width: 30%;
+  height: 228px;
+  border-radius: 6px;
+}
+
+/* 右边的饱和度方板：横轴饱和度、纵轴明度 */
+.color-tool-saturation {
+  position: relative;
+  width: 70%;
+  height: 228px;
+  border-radius: 6px;
+  touch-action: none;
+}
+
+/* 渐变铺在绝对定位的内层上：指针半悬在圆角外面也不会被裁掉 */
+.color-tool-saturation-gradient {
+  position: absolute;
+  inset: 0;
+  border-radius: 6px;
+}
+
+.color-tool-hue {
+  position: relative;
+  height: 12px;
+  border-radius: 999px;
+  /* 色相环六段，跟 react-color 的 Hue 用同一组停点 */
+  background: linear-gradient(
+    to right,
+    #f00 0%,
+    #ff0 17%,
+    #0f0 33%,
+    #0ff 50%,
+    #00f 67%,
+    #f0f 83%,
+    #f00 100%
+  );
+  touch-action: none;
+}
+
+/* 两处指针：白圈 + 阴影，原版是 react-color 的 GooglePointer / GooglePointerCircle */
+.color-tool-pointer {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 2px rgb(0 0 0 / 60%);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.color-tool-pointer-hue {
+  top: 50%;
+}
+
+/* 键盘操作时得看得见焦点（原版 react-color 也能用方向键调） */
+.color-tool-saturation:focus-visible,
+.color-tool-hue:focus-visible {
+  outline: 2px solid var(--spirit-accent);
+  outline-offset: 2px;
+}
+
+/* 输入格 ------------------------------------------------------------------ */
+
+.color-tool-fields {
+  margin: 24px 0;
+}
+
+.color-tool-fields-hex {
+  display: flex;
+  align-items: center;
+}
+
+/* 带复制按钮的输入框（原 components/EditableInput） */
+.color-tool-input-wrap {
+  position: relative;
+}
+
+.color-tool-input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 48px;
+  padding: 4px 10% 3px;
+  color: var(--spirit-text);
+  font-size: 16px;
+  text-align: center;
+  text-transform: lowercase;
+  background: transparent;
+  border: 1px solid var(--spirit-border-strong);
+  border-radius: 5px;
+  outline: none;
+}
+
+.color-tool-input:focus {
+  border-color: var(--spirit-accent);
+}
+
+/* 标签浮在边框上，底色得跟所在卡片一样，不然会压出一道杠 */
+.color-tool-input-label {
+  position: absolute;
+  top: -9px;
+  width: 32px;
+  color: var(--spirit-muted);
+  font-weight: 500;
+  font-size: 14px;
+  line-height: 18px;
+  text-align: center;
+  text-transform: uppercase;
+  background: var(--spirit-surface);
+}
+
+.color-tool-input-label-left {
+  left: 10px;
+}
+
+.color-tool-input-label-center {
+  right: 0;
+  left: 0;
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.color-tool-input-label-right {
+  right: 10px;
+}
+
+.color-tool-input-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+
+/* 记录 -------------------------------------------------------------------- */
+
+.color-tool-record {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.color-tool-record-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 88px;
+  height: 86px;
+  margin: 6px;
+}
+
+/* 删除按钮平时藏着，指到那张卡上才出来（原版的 hover 行为） */
+.color-tool-record-remove {
+  position: absolute;
+  top: -6px;
+  right: 6px;
+  z-index: 100;
+  display: none;
+  padding: 2px;
+  color: var(--spirit-surface);
+  background-color: var(--spirit-muted);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.color-tool-record-item:hover .color-tool-record-remove {
+  display: block;
+}
+
+.color-tool-record-swatch {
+  width: 64px;
+  height: 64px;
+  border: 1px solid var(--spirit-border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.color-tool-record-title {
+  display: block;
+  width: 100%;
+  height: 22px;
+  color: var(--spirit-text);
+  font-size: 12px;
+  line-height: 22px;
+  text-align: center;
+  cursor: text;
+}
+
+.color-tool-record-title-input {
+  padding: 0 2px;
+  text-align: center;
+}
