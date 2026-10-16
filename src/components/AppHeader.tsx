@@ -1,26 +1,16 @@
-import {
-  GithubOutlined,
-  SearchOutlined,
-  SettingOutlined,
-} from "@ant-design/icons";
-import { Button, Input, Tooltip } from "antd";
+import { GithubOutlined, SettingOutlined } from "@ant-design/icons";
+import { Button, Tooltip } from "antd";
 import { useConfig } from "../config/configContext.ts";
 
 const REPOSITORY_URL = "https://github.com/ChrisSong1994/Navigator";
 const RELEASES_URL = `${REPOSITORY_URL}/releases`;
 
 interface AppHeaderProps {
-  keyword: string;
-  onKeywordChange: (value: string) => void;
   onOpenSettings: () => void;
 }
 
-/** 顶栏只放标题、统计、搜索和配置入口；主题 / 展示模式等开关都收在配置面板里，不重复出现 */
-export function AppHeader({
-  keyword,
-  onKeywordChange,
-  onOpenSettings,
-}: AppHeaderProps) {
+/** 顶栏只放标题、统计和配置入口；搜索 / 筛选收在页面主搜索框里，主题 / 展示模式等开关都收在配置面板里，不重复出现 */
+export function AppHeader({ onOpenSettings }: AppHeaderProps) {
   const { settings, groupIds, linkCount, storageMode } = useConfig();
   const isExtension = storageMode === "sync";
 
@@ -40,14 +30,6 @@ export function AppHeader({
         </div>
 
         <div className="ml-auto flex items-center gap-2">
-          <Input
-            allowClear
-            value={keyword}
-            onChange={(event) => onKeywordChange(event.target.value)}
-            prefix={<SearchOutlined className="text-[var(--spirit-muted)]" />}
-            placeholder="搜索链接或分组"
-            className="w-[240px]"
-          />
           {!isExtension && (
             <Button
               type="text"

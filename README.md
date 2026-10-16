@@ -88,6 +88,7 @@ chrome_bookmarks_demo.html ──pnpm import:bookmarks──▶ global_original.
 - 输入内容后 Enter / 点击搜索按钮 → 按 `searchOpenInNewTab` 在新窗口或当前窗口打开搜索结果
 - 输入 `https://...` 或裸域名 → 直接打开对应网址
 - 输入时显示搜索引擎联想词，支持上下方向键与 Enter
+- 联想词下面会按关键词列出命中的本地快捷链接（链接名或地址包含关键词即命中，最多 6 条，超出只提示总数），按 `linkOpenInNewTab` 打开；方向键可以在联想词和快捷链接之间连续移动
 - 中文输入法组词时按 Enter 只上屏，不会触发搜索
 - `Cmd/Ctrl+K` 或 `/` 聚焦搜索框
 
