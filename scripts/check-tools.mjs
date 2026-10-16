@@ -17,6 +17,8 @@ import {
 } from '../src/tools/Json/lib/json.ts'
 import { addHistoryEntry, removeHistoryEntry } from '../src/tools/lib/history.ts'
 import { formatTime, isEmpty } from '../src/tools/lib/util.ts'
+import { JSON_FILE_KIND } from '../src/tools/Json/lib/kind.ts'
+import { MARKDOWN_FILE_KIND } from '../src/tools/Markdown/lib/kind.ts'
 import {
   cmykToRgb,
   derive,
@@ -33,8 +35,21 @@ import {
   rgbToHsv,
 } from '../src/tools/Color/lib/color.ts'
 import { addRecord, removeRecord, renameRecord } from '../src/tools/Color/lib/records.ts'
-import { JSON_FILE_KIND } from '../src/tools/Json/lib/kind.ts'
-import { MARKDOWN_FILE_KIND } from '../src/tools/Markdown/lib/kind.ts'
+import { EVENTS, OPEN_STATES, isOpenState, transition } from '../src/tools/AstExplorer/components/visualization/tree/openState.ts'
+import { treeAdapterFromConfig } from '../src/tools/AstExplorer/components/visualization/core/TreeAdapter.ts'
+import { safeStringify } from '../src/tools/AstExplorer/lib/safeStringify.ts'
+import stringify from '../src/tools/AstExplorer/lib/stringify.ts'
+import {
+  DEFAULT_TREE_SETTINGS,
+  TREE_SETTINGS_KEY,
+  parseTreeSettings,
+} from '../src/tools/AstExplorer/lib/treeSettings.ts'
+import { categories, javascript } from '../src/tools/AstExplorer/parsers/index.ts'
+import { acorn } from '../src/tools/AstExplorer/parsers/js/acorn.ts'
+import { babel } from '../src/tools/AstExplorer/parsers/js/babel.ts'
+import { describeJsonError, jsoncParser, normalizeJsonNode } from '../src/tools/AstExplorer/parsers/json/jsonc.ts'
+import { yamlNodeName, yamlNodeRange } from '../src/tools/AstExplorer/parsers/yaml/node.ts'
+import { yamlParser } from '../src/tools/AstExplorer/parsers/yaml/yaml.ts'
 
 let passed = 0
 const test = (name, fn) => {
@@ -46,6 +61,26 @@ const test = (name, fn) => {
     console.error(`✗ ${name}\n  ${error.message}`)
     process.exitCode = 1
   }
+}
+
+/**
+ * AST 那边的解析库要走动态 import（浏览器里是 loadParser 的那一下），所以得能 await。
+ * 跑完统一等一遍（文件末尾的 await Promise.all(pending)）。
+ */
+const pending = []
+const testAsync = (name, fn) => {
+  pending.push(
+    (async () => {
+      try {
+        await fn()
+        passed += 1
+        console.log(`✓ ${name}`)
+      } catch (error) {
+        console.error(`✗ ${name}\n  ${error.message}`)
+        process.exitCode = 1
+      }
+    })(),
+  )
 }
 
 /** 断言解析失败，并把错误对象给回调用方继续查 */
@@ -361,6 +396,313 @@ test('颜色记录：记录、改名、删除', () => {
   assert.equal(removeRecord(renamed, '没有这个 key').length, 2)
 })
 
+/* AST 工具 ---------------------------------------------------------------- */
+
+test('AST 树的展开状态机：光标、点击、Shift 展开三种事件的去向', () => {
+  const { DEFAULT, OPEN, DEEP_OPEN, FOCUS_OPEN, CLOSED } = OPEN_STATES
+  const { GAIN_FOCUS, LOOSE_FOCUS, DEEP_OPEN: DEEP } = EVENTS
+
+  // 光标进来 → 自动展开；离开 → 合回去
+  assert.equal(transition(CLOSED, GAIN_FOCUS), FOCUS_OPEN)
+  assert.equal(transition(FOCUS_OPEN, LOOSE_FOCUS), DEFAULT)
+
+  // 自己点开的（OPEN）不会被光标带走 —— 这一条错了就会「点开一个节点去看源码，回来它自己合上了」
+  assert.equal(transition(OPEN, GAIN_FOCUS), OPEN)
+  assert.equal(transition(OPEN, LOOSE_FOCUS), OPEN)
+
+  // Shift 展开过的子树是「只进不出」，得再点一下才收
+  assert.equal(transition(DEFAULT, DEEP), DEEP_OPEN)
+  assert.equal(transition(DEEP_OPEN, LOOSE_FOCUS), DEEP_OPEN)
+
+  assert.equal(isOpenState(DEFAULT, true), true)
+  assert.equal(isOpenState(DEFAULT, false), false)
+  assert.equal(isOpenState(CLOSED, true), false)
+  assert.equal(isOpenState(FOCUS_OPEN, false), true)
+  assert.equal(isOpenState(DEEP_OPEN, false), true)
+})
+
+test('AST 的 JSON 视图：共享引用照常展开，只有真的环才写 [Circular]', () => {
+  // babel 的注释对象、yaml 的锚点都是「同一个对象被多处引用」；
+  // 原版把见过的对象全记下来，于是这些在 JSON 面板里全变成 [Circular]
+  const shared = { a: 1 }
+  assert.equal(
+    safeStringify({ first: shared, second: shared }, 0),
+    '{"first":{"a":1},"second":{"a":1}}',
+  )
+
+  const circular = { name: 'root' }
+  circular.self = circular
+  assert.equal(safeStringify(circular, 0), '{"name":"root","self":"[Circular]"}')
+
+  const list = [1]
+  list.push(list)
+  assert.equal(safeStringify(list, 0), '[1,"[Circular]"]')
+})
+
+test('AST 树里的标量显示：字符串带引号、数字就是数字、对象不再爆栈', () => {
+  assert.equal(stringify('a'), '"a"')
+  assert.equal(stringify('说"引号'), JSON.stringify('说"引号'))
+  assert.equal(stringify(12), '12')
+  assert.equal(stringify(NaN), 'NaN')
+  assert.equal(stringify(null), 'null')
+  assert.equal(stringify(undefined), 'undefined')
+  assert.equal(stringify(true), 'true')
+  // 原版这一支写的是 JSON.stringify(value, (k, v) => stringify(v))，一进对象就递归回自己，直接栈溢出
+  assert.equal(stringify({ a: 1 }), '{"a":1}')
+})
+
+test('AST 树的显示选项：存档坏了 / 缺字段 / 多字段都不能把树带崩', () => {
+  assert.equal(TREE_SETTINGS_KEY, 'navigator.ast.treeSettings')
+
+  // 原版读档是直接 JSON.parse，手改坏一次就在 render 里抛异常白屏
+  for (const broken of ['{ 这不是 json', '[1,2]', '"123"', 'null', '']) {
+    assert.deepEqual(parseTreeSettings(broken), DEFAULT_TREE_SETTINGS, `坏存档 ${broken} 没退回默认值`)
+  }
+
+  // 缺字段补默认值，值不是布尔就忽略
+  assert.deepEqual(parseTreeSettings('{"autofocus":false}'), {
+    ...DEFAULT_TREE_SETTINGS,
+    autofocus: false,
+  })
+  assert.deepEqual(parseTreeSettings('{"autofocus":"no"}'), DEFAULT_TREE_SETTINGS)
+
+  // 正常存档原样还原，不属于显示选项的键丢掉（它们会在下次存档时被写回去）
+  const restored = parseTreeSettings(JSON.stringify({ ...DEFAULT_TREE_SETTINGS, hideTypeKeys: true }))
+  assert.equal(restored.hideTypeKeys, true)
+  assert.deepEqual(Object.keys(restored).sort(), Object.keys(DEFAULT_TREE_SETTINGS).sort())
+})
+
+test('树上的「隐藏」开关：每个都真的在过滤它该过滤的东西', () => {
+  const adapter = (overrides = {}) =>
+    treeAdapterFromConfig({ type: 'estree' }, { ...DEFAULT_TREE_SETTINGS, ...overrides })
+  const node = { type: 'Identifier', name: 'a', start: 0, end: 1, extra: null, fn: () => {} }
+  const keysOf = (a, value = node) => Array.from(a.walkNode(value), ({ key }) => key)
+
+  // 默认：方法藏起来，别的都显示
+  assert.deepEqual(keysOf(adapter()), ['type', 'name', 'start', 'end', 'extra'])
+  assert.deepEqual(keysOf(adapter({ hideFunctions: false })), [
+    'type',
+    'name',
+    'start',
+    'end',
+    'extra',
+    'fn',
+  ])
+  assert.deepEqual(keysOf(adapter({ hideEmptyKeys: true })), ['type', 'name', 'start', 'end'])
+  assert.deepEqual(keysOf(adapter({ hideLocationData: true })), ['type', 'name', 'extra'])
+  assert.deepEqual(keysOf(adapter({ hideTypeKeys: true })), ['name', 'start', 'end', 'extra'])
+
+  // 数组里的 null 不算「空键」——[1, null] 里的 null 是有意义的元素
+  assert.deepEqual(keysOf(adapter({ hideEmptyKeys: true }), [1, null]), ['0', '1'])
+
+  // 每个复选框的键都得在显示选项里，否则存档再读回来会被校验丢掉，开关看着能点其实不生效
+  for (const type of ['estree', 'json', 'yaml']) {
+    const filters = treeAdapterFromConfig({ type }, DEFAULT_TREE_SETTINGS).getConfigurableFilters()
+    assert.equal(filters.length, 4, `${type} 的开关数量变了`)
+    for (const filter of filters) {
+      assert.ok(filter.key in DEFAULT_TREE_SETTINGS, `${type} 的开关 ${filter.key} 不在显示选项里`)
+      assert.ok(filter.label, `${type} 的开关 ${filter.key} 没有文案`)
+    }
+  }
+})
+
+test('estree 适配器：节点区间与「光标落在哪一节点」', () => {
+  const code = 'const a = 1\nfoo(a)\n'
+  const program = {
+    type: 'Program',
+    start: 0,
+    end: code.length,
+    body: [
+      { type: 'VariableDeclaration', start: 0, end: 11, range: [0, 11], declarations: [] },
+      {
+        type: 'ExpressionStatement',
+        start: 12,
+        end: 18,
+        expression: {
+          type: 'CallExpression',
+          start: 12,
+          end: 18,
+          callee: { type: 'Identifier', start: 12, end: 15, name: 'foo' },
+          arguments: [{ type: 'Identifier', start: 16, end: 17, name: 'a' }],
+        },
+      },
+    ],
+  }
+  const adapter = treeAdapterFromConfig({ type: 'estree' }, DEFAULT_TREE_SETTINGS)
+  const call = program.body[1].expression
+  const callee = call.callee
+
+  assert.deepEqual(adapter.getRange(program), [0, code.length])
+  assert.deepEqual(adapter.getRange(program.body[0]), [0, 11]) // 有 range 用 range
+  assert.deepEqual(adapter.getRange(callee), [12, 15]) // 只有 start/end 就用 start/end
+  assert.equal(adapter.getRange({ type: 'Identifier' }), undefined)
+  assert.equal(adapter.getRange(null), undefined)
+
+  // 光标在 `foo` 里
+  assert.equal(adapter.isInRange(callee, 'callee', 13), true)
+  assert.equal(adapter.isInRange(callee, 'callee', 17), false)
+  // 位置信息那些键不算命中，否则光标停在 start 那个数字上会把一大片都点亮
+  assert.equal(adapter.isLocationProp('start'), true)
+  assert.equal(adapter.isLocationProp('callee'), false)
+  assert.equal(adapter.isInRange(callee, 'start', 13), false)
+  // 没有光标位置（-1）时谁都不命中
+  assert.equal(adapter.isInRange(callee, 'callee', -1), false)
+  // 光标在 `a` 里：整条祖先链都得认账，树才会顺着展开到那个节点
+  assert.equal(adapter.isInRange(program, '', 16), true)
+  assert.equal(adapter.hasChildrenInRange(program, '', 16), true)
+  assert.equal(adapter.hasChildrenInRange(program, '', 100), false)
+
+  assert.equal(adapter.opensByDefault(program, ''), true) // Program 默认展开
+  assert.equal(adapter.opensByDefault(program.body[0], 'body'), true)
+  assert.equal(adapter.opensByDefault(callee, 'callee'), false)
+})
+
+testAsync('JSON 适配器：jsonc 的节点摊平后带区间，对象不会被当成数组', async () => {
+  const jsonc = await jsoncParser.loadParser()
+  const code = '{\n  "a": [1, 2]\n}'
+  const root = jsoncParser.parse(jsonc, code)
+
+  assert.equal(root.type, 'object')
+  assert.deepEqual([root.start, root.end], [0, code.length])
+  // 关键：jsonc 自己的 length / offset / parent 都摊掉了。
+  // 树是拿「有没有数字 length」判断数组的，留着 length 的话每个对象都会被渲染成 [ ... ]
+  for (const dropped of ['length', 'offset', 'parent', 'colonOffset']) {
+    assert.equal(dropped in root, false, `摊平后还留着 ${dropped}`)
+  }
+
+  const property = root.children[0]
+  assert.equal(property.type, 'property')
+  assert.equal(property.key.type, 'string')
+  assert.equal(property.key.value, 'a')
+  assert.equal(property.value.type, 'array')
+  // 区间跟源码对得上（源码高亮就靠这个）
+  assert.equal(code.slice(property.key.start, property.key.end), '"a"')
+  assert.equal(code.slice(property.value.start, property.value.end), '[1, 2]')
+
+  const adapter = treeAdapterFromConfig({ type: 'json' }, DEFAULT_TREE_SETTINGS)
+  assert.equal(adapter.getNodeName(property), 'property')
+  assert.equal(adapter.isInRange(property, '0', code.indexOf('"a"') + 1), true)
+  assert.equal(adapter.isInRange(property, '0', code.indexOf('}')), false)
+
+  // 语法错误要抛出来（jsonc 的 parseTree 自己不抛，红条靠这里）
+  assert.throws(() => jsoncParser.parse(jsonc, '{"a": }'), /ValueExpected/)
+  // 空内容不是语法错误，返回 null 交给界面显示空状态
+  assert.equal(jsoncParser.parse(jsonc, '   '), null)
+
+  // 值写坏了只有 key 一个子节点，别凭空造一个假的 value 出来
+  const brokenProperty = normalizeJsonNode(jsonc.parseTree('{"a": }')).children[0]
+  assert.deepEqual(Object.keys(brokenProperty).sort(), ['end', 'key', 'start', 'type'])
+})
+
+testAsync('JSON 报错：说清是哪一行哪一列', async () => {
+  const jsonc = await jsoncParser.loadParser()
+  const code = '{\n  "a": ,\n}'
+  const errors = []
+  jsonc.parseTree(code, errors)
+
+  assert.equal(errors.length > 0, true)
+  assert.equal(describeJsonError(errors[0], code), 'ValueExpected（第 2 行 第 8 列）')
+})
+
+testAsync('yaml 适配器：v2 的节点没有 type 字段，名字只能靠类型判断', async () => {
+  const yaml = await yamlParser.loadParser()
+  const code = 'name: &n foo\nlist:\n  - *n\n  - 2\n'
+  const document = yamlParser.parse(yaml, code)
+
+  assert.equal(yamlNodeName(document), 'Document')
+  assert.equal(yamlNodeName(document.contents), 'YAMLMap')
+  const firstPair = document.contents.items[0]
+  const list = document.contents.items[1].value
+  assert.equal(yamlNodeName(firstPair), 'Pair')
+  assert.equal(yamlNodeName(list), 'YAMLSeq')
+  assert.equal(yamlNodeName(list.items[0]), 'Alias')
+  assert.equal(yamlNodeName(list.items[1]), 'Scalar')
+  // Document 上的 options / schema 这些普通对象不给名字
+  assert.equal(yamlNodeName({ plain: 1 }), undefined)
+
+  // range 是三段的 [start, valueEnd, nodeEnd]，第三段还带着后面的换行，取前两段才不会多选一截
+  const anchored = firstPair.value
+  assert.deepEqual(anchored.range.length, 3)
+  assert.deepEqual(yamlNodeRange(anchored), [9, 12])
+  assert.equal(code.slice(9, 12), 'foo')
+  assert.deepEqual(yamlNodeRange(list.items[0]), [23, 25])
+  assert.equal(code.slice(23, 25), '*n')
+  assert.deepEqual(yamlNodeRange(list.items[1]), [30, 31])
+  assert.equal(code.slice(30, 31), '2')
+  // Pair 在 yaml v2 上没有 range，它的 key / value 有
+  assert.equal(yamlNodeRange(firstPair), undefined)
+  assert.deepEqual(yamlNodeRange(firstPair.key), [0, 4])
+
+  const adapter = treeAdapterFromConfig({ type: 'yaml' }, DEFAULT_TREE_SETTINGS)
+  assert.equal(adapter.isInRange(anchored, 'value', 10), true)
+  assert.equal(adapter.isInRange(anchored, 'value', 20), false)
+  assert.equal(adapter.hasChildrenInRange(document, '', 10), true)
+
+  // 语法错误不抛异常，得靠 getErrors 把红条补上；树照常显示已经解析出来的那部分
+  const broken = yamlParser.parse(yaml, 'a: [1, 2\n')
+  assert.equal(broken.errors.length > 0, true)
+  assert.equal(yamlParser.getErrors(broken).length, broken.errors.length)
+  assert.equal(yamlParser.getErrors(yamlParser.parse(yaml, 'a: 1\n')).length, 0)
+
+  // 空内容返回 null（不是错误）
+  assert.equal(yamlParser.parse(yaml, '\n'), null)
+})
+
+testAsync('三个解析器都能真解析：插件表在 Babel 8 上还认', async () => {
+  const babelModule = await babel.loadParser()
+  const file = babel.parse(babelModule, 'const a = 1\nfoo(a)\n')
+  assert.equal(file.type, 'File')
+  assert.equal(file.program.type, 'Program')
+  assert.equal(babel.getNodeName(file), 'File')
+  assert.deepEqual(babel.nodeToRange(file.program.body[0]), [0, 11])
+  assert.equal('const a = 1\nfoo(a)\n'.slice(...babel.nodeToRange(file.program.body[0])), 'const a = 1')
+
+  // 插件表里的 typescript / jsx：没生效的话这两段直接抛
+  assert.equal(babel.parse(babelModule, 'const a: number = 1\n').program.body[0].type, 'VariableDeclaration')
+  assert.equal(
+    babel.parse(babelModule, 'const x = <div a="1" />\n').program.body[0].declarations[0].init.type,
+    'JSXElement',
+  )
+
+  const acornModule = await acorn.loadParser()
+  const tree = acorn.parse(acornModule, '// 注释\nconst a = 1\n')
+  assert.equal(tree.type, 'Program')
+  assert.deepEqual(acorn.nodeToRange(tree.body[0]), [6, 17])
+  assert.equal('// 注释\nconst a = 1\n'.slice(6, 17), 'const a = 1')
+  // 注释和 token 挂在根上（原版的行为）
+  assert.equal(tree.comments.length, 1)
+  assert.equal(tree.comments[0].value.trim(), '注释')
+  assert.equal(tree.tokens.length > 0, true)
+
+  // 解析不了的代码要抛（界面上就是那条红条）
+  assert.throws(() => acorn.parse(acornModule, 'const = 1'), SyntaxError)
+  assert.throws(() => babel.parse(babelModule, 'const = 1'))
+})
+
+test('三类语言都与适配器对得上', () => {
+  assert.deepEqual(
+    categories.map((category) => category.id),
+    ['javascript', 'json', 'yaml'],
+  )
+  assert.equal(javascript.parsers.map((parser) => parser.id).join(), 'babel,acorn')
+
+  for (const category of categories) {
+    assert.equal(category.parsers.length > 0, true, `${category.id} 没有解析器`)
+    assert.ok(category.codeExample, `${category.id} 缺示例代码`)
+    // 示例代码一进来就摆进编辑器，得能真的解析出来
+    assert.ok(category.codeExample.trim().length > 0)
+    // 语言换了编辑器词法也得跟着换（原版这里写死 javascript，JSON/YAML 是按 JS 高亮的）
+    for (const parser of category.parsers) {
+      assert.ok(parser.editorLanguage, `${parser.id} 没配编辑器语言`)
+    }
+    // 页面是按这个规则挑适配器的（index.tsx 的 adapterTypeFor）
+    const type = category.id === 'javascript' ? 'estree' : category.id
+    assert.doesNotThrow(() => treeAdapterFromConfig({ type }, DEFAULT_TREE_SETTINGS))
+    // 不认识的适配器名要当场喊出来，而不是默默渲染出一棵空树
+    assert.throws(() => treeAdapterFromConfig({ type: '没有这个' }, DEFAULT_TREE_SETTINGS), /Unknown tree adapter/)
+  }
+})
+
 /* 导入 / 保存的文件类型 ---------------------------------------------------- */
 
 test('文件类型：accept 里得含扩展名，mime / 描述不缺（选文件对话框靠它）', () => {
@@ -379,5 +721,6 @@ test('文件类型：accept 里得含扩展名，mime / 描述不缺（选文件
 })
 
 // AST 那边几个用例要等 loadParser 的动态 import
+await Promise.all(pending)
 
 console.log(`\n工具逻辑冒烟：${passed} 项通过${process.exitCode ? '，有失败项' : ''}`)

@@ -1,0 +1,243 @@
+/**
+ * AST 工具自己的样式。类名统一加 ast-tool- 前缀，跟随工具页卡片宽度，不往全局 index.css 里塞东西。
+ *
+ * 树那一段是原项目缺的那一半：原版的 tree.css 只有布局（容器 / 缩进 / 折叠），
+ * `.entry` / `.key` / `.s` / `.highlighted` 这些真正决定长相的规则一条都没有 ——
+ * 树能跑，但整棵树都是黑字，看不出哪个是键哪个是值、光标落在哪。
+ * 这里补上，并且所有颜色都走 --spirit-* token（原项目写死的是深色主题下的一整套颜色，
+ * 直接照搬在浅色模式下就看不见了）。
+ */
+
+/* 报错那支红色没有对应 token，就地补一对明暗值（跟 Json.css 里 --json-tool-danger 的写法一致）。
+   不复用 Json 那个变量：那是 Json.css 自己的命名空间，只在 Json 工具的 chunk 加载后才有。 */
+:root {
+  --ast-tool-danger: #cf1322;
+  --ast-tool-source-value: #0a7d55;
+}
+
+[data-theme='dark'] {
+  --ast-tool-danger: #ff7875;
+  --ast-tool-source-value: #5fd39b;
+}
+
+.ast-tool-root {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 工具栏 ------------------------------------------------------------------ */
+
+.ast-tool-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.ast-tool-label {
+  color: var(--spirit-muted);
+  font-size: 13px;
+}
+
+.ast-tool-label:not(:first-child) {
+  margin-left: 6px;
+}
+
+.ast-tool-splitter {
+  min-height: 0;
+}
+
+/* 两栏外面那圈框子 -------------------------------------------------------- */
+
+.ast-tool-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  /* 分栏中间的拖拽条自带间距，这里只描边 */
+  border: 1px solid var(--spirit-border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--spirit-surface);
+}
+
+.ast-tool-panel-head {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--spirit-border);
+  background: var(--spirit-inset);
+  color: var(--spirit-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ast-tool-panel-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 编辑器面板：monaco 自己要在有确定高度的盒子里（@monaco-editor/react 的 props 里没有 style） */
+.ast-tool-editor {
+  flex: 1;
+  min-height: 0;
+}
+
+.ast-tool-panel-body > .ant-empty {
+  margin: auto;
+}
+
+/* 源码里的高亮装饰（树上悬停时盖上来的） --------------------------------- */
+
+.ast-tool-source-highlight {
+  background: color-mix(in srgb, var(--spirit-accent) 22%, transparent);
+  border-radius: 2px;
+}
+
+/* 报错 ------------------------------------------------------------------- */
+
+.ast-tool-error {
+  flex-shrink: 0;
+  max-height: 120px;
+  overflow: auto;
+  padding: 8px;
+  border-bottom: 1px solid var(--spirit-border);
+  background: color-mix(in srgb, var(--ast-tool-danger) 8%, transparent);
+  color: var(--ast-tool-danger);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* yaml 的错误信息自带源码那一行和插入符，不能折行折没了 */
+  white-space: pre-wrap;
+  font-size: 12px;
+}
+
+/* 树 --------------------------------------------------------------------- */
+
+.ast-tool-tree {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.ast-tool-tree-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--spirit-border);
+  font-size: 12px;
+}
+
+.ast-tool-tree-root {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 4px 8px 12px;
+  overflow: auto;
+  cursor: default;
+  /* AST 是给人对源码看的，等宽字体才看得清偏移 */
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+.ast-tool-tree-root ul {
+  margin: 0;
+  padding-left: 18px;
+  /* 展开的子节点列表是缩进的，长节点名别把它顶破 */
+  list-style: none;
+  border-left: 1px solid var(--spirit-border);
+}
+
+.ast-tool-tree-root .value-body {
+  width: fit-content;
+  min-width: 300px;
+}
+
+/* 一行 */
+.ast-tool-tree-root .entry {
+  white-space: nowrap;
+}
+
+/* 光标所在的那一行（或者它的子节点里有光标的那一行） */
+.ast-tool-tree-root .entry.highlighted {
+  background: color-mix(in srgb, var(--spirit-accent) 16%, transparent);
+  border-radius: 3px;
+}
+
+/* 能展开的行，名字可点 */
+.ast-tool-tree-root .entry.toggable > .tokenName,
+.ast-tool-tree-root .entry.toggable > .key > .name,
+.ast-tool-tree-root .entry.toggable > .value > .tokenName {
+  cursor: pointer;
+}
+
+.ast-tool-tree-root .entry.toggable:hover {
+  background: var(--spirit-inset);
+  border-radius: 3px;
+}
+
+/* 名字（Identifier / YAMLMap / 键名） */
+.ast-tool-tree-root .tokenName {
+  color: var(--spirit-accent);
+}
+
+.ast-tool-tree-root .key .name {
+  color: var(--spirit-muted);
+}
+
+/* 标点：括号、逗号、冒号 */
+.ast-tool-tree-root .p {
+  color: var(--spirit-muted);
+}
+
+/* 标量值 */
+.ast-tool-tree-root .s {
+  color: var(--ast-tool-source-value);
+}
+
+/* 收起来时的 `{ }` / `[3 elements]` */
+.ast-tool-tree-root .compact {
+  cursor: pointer;
+}
+
+.ast-tool-tree-root .placeholder {
+  color: var(--spirit-muted);
+}
+
+.ast-tool-tree-root .compact:hover {
+  color: var(--spirit-accent);
+  text-decoration: underline;
+}
+
+/* 可点开的东西（折叠提示、挂在 $node 上、可调用的方法）—— 虚线标一下 */
+.ast-tool-tree-root .ge {
+  color: var(--spirit-muted);
+  border-bottom: 1px dashed var(--spirit-border-strong);
+}
+
+.ast-tool-tree-root .invokeable {
+  cursor: pointer;
+}
+
+.ast-tool-tree-root .invokeable:hover {
+  color: var(--spirit-accent);
+}
+
+.ast-tool-tree-root .error {
+  color: var(--ast-tool-danger);
+  cursor: help;
+}
+
+/* 收起来的行末尾那个 `}` 单独占一行，跟前面的 `{` 对齐 */
+.ast-tool-tree-root .suffix {
+  padding-left: 2px;
+}

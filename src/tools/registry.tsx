@@ -1,4 +1,9 @@
-import { BgColorsOutlined, CodeOutlined, FileMarkdownOutlined } from '@ant-design/icons'
+import {
+  BgColorsOutlined,
+  CodeOutlined,
+  FileMarkdownOutlined,
+  PartitionOutlined,
+} from '@ant-design/icons'
 import { lazy } from 'react'
 import type { ComponentType, ReactNode } from 'react'
 
@@ -39,6 +44,13 @@ export const TOOLS: ToolEntry[] = [
     description: '编写 / 预览 / 导入导出 .md / 公式、图表与代码高亮',
     icon: <FileMarkdownOutlined />,
     content: lazy(() => import('./Markdown/index.tsx')),
+  },
+  {
+    key: 'ast',
+    title: 'AST',
+    description: '源码转 AST / 树与 JSON 两种视图 / 悬停联动源码高亮',
+    icon: <PartitionOutlined />,
+    content: lazy(() => import('./AstExplorer/index.tsx')),
   },
 ]
 

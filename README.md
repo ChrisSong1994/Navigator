@@ -14,7 +14,7 @@
 - Bing 壁纸：关闭、从最近 8 天中选取、按间隔自动轮播、自定义图片地址；配置里只持久化一个图片直链
 - Chrome 书签双向同步：手动从书签栏 /「导航精灵」拉取，或把当前配置推送 / 覆盖到书签栏下的「导航精灵」文件夹
 - 数据导入导出：标准配置 JSON，以及 Chrome 书签 HTML
-- 工具箱：顶栏入口弹出工具抽屉，选中后整页打开该工具，左上角返回箭头回首页；目前有颜色工具（取色面板、HEX / RGB / CMYK / HSV / HSL 互转、颜色记录）、JSON 工具（格式化 / 压缩 / 校验并给出行列与出错片段 / 修复 / JSON5 兼容解析 / 转义与去转义 / 上传下载）和 Markdown 工具（编辑 + 预览、GFM、公式、图表、代码高亮、导入导出 .md），工具界面按需懒加载
+- 工具箱：顶栏入口弹出工具抽屉，选中后整页打开该工具，左上角返回箭头回首页；目前有颜色工具（取色面板、HEX / RGB / CMYK / HSV / HSL 互转、颜色记录）、JSON 工具（格式化 / 压缩 / 校验并给出行列与出错片段 / 修复 / JSON5 兼容解析 / 转义与去转义 / 上传下载）、Markdown 工具（编辑 + 预览、GFM、公式、图表、代码高亮、导入导出 .md）和 AST 工具（JS / TS、JSON、YAML 三种语言转 AST，树与 JSON 两种视图，悬停联动源码高亮），工具界面按需懒加载
 
 ## 数据流
 
@@ -148,6 +148,36 @@ chrome_bookmarks_demo.html ──pnpm import:bookmarks──▶ global_original.
 暗色适配走站点自己的 `[data-theme='dark']` 覆盖：`.bytemd` / `.bytemd-toolbar` / `.CodeMirror` / `.CodeMirror-gutters` 的底色边框换成 `--spirit-*`，再补一套 `.cm-s-default .cm-*` 的 token 颜色。预览区的 markdown 样式和代码高亮主题（`github-markdown-light` / `vs-*.css` ↔ `github-markdown-dark` / `vs2015`）由 `useColorScheme()` 跟着切换。
 
 体积：Markdown 工具那份 chunk 约 720 KB（gzip 约 225 KB，里面 mermaid 约 256 KB、katex 约 259 KB），样式单独一份 `Markdown-*.css` 约 49 KB（gzip 12 KB），另有 59 个 KaTeX 字体文件（woff2 / woff / ttf，合计约 1.1 MB）随需要加载。同样只在打开工具时才请求。
+
+### AST 工具
+
+从 `developer-assistant` 的 `src/renderer/pages/AstExplorer` 搬过来，但只搬了三分之一 —— 上游那套是「12 个类目、19 个解析器、还能顺手转译代码」，其中大部分在扩展里跑不了或者没人用：
+
+- **语言只留三类**：JavaScript / TypeScript（`@babel/parser`、`acorn`）、JSON（`jsonc-parser`）、YAML（`yaml` v2）。上游还有 CSS / HTML / GraphQL / Handlebars / Markdown / Vue / Svelte / Swagger 等，这些要么得再拉一个解析器包，要么根本没解析器只是列在那儿
+- **实时代码转换整块砍掉**：上游右侧有个「Transform」面板，用 `@babel/standalone` 把 AST 转回代码。`@babel/standalone` 自己就是 `new Function` 拼出来的，扩展的 CSP（`script-src 'self'`）下必然被拦，所以这一路连同它的开关、第二个编辑器、输出面板一起去掉
+- **zustand store 没搬**：上游整个页面状态放在一个 store 里，其实只有这一个页面用，跟颜色 / JSON 两个工具一样留在组件里（`useState`）
+
+留下的部分：
+
+- 左边 monaco 编辑器，右边两种视图切换：**树**（可展开、点节点跳源码、悬停节点高亮源码）和 **JSON**（整棵 AST 序列化出来看）
+- 语言 / 解析器两个下拉框，解析器是按需 `import()` 的，不选中就不下载（Babel 那份 285 KB 只在打开 AST 工具时才请求）
+- 树上四个「隐藏」开关（方法 / 空键 / 位置信息 / type 键）加一个「自动聚焦」，都存在 localStorage `navigator.ast.treeSettings`
+- 语法错误不清空整棵树：解析失败时保留上一次的 AST，红条把错误贴在上面（YAML 的 `parseDocument` 不抛异常，所以给解析器加了 `getErrors` 这个钩子来补红条）
+- 编辑器语言跟着解析器走（`editorLanguage`）：上游写死 `javascript`，JSON / YAML 也是按 JS 高亮的
+
+上游那份是搬了一半的状态，几个地方必须修，不修的话功能是死的：
+
+- **树的样式上游根本没有**。树组件引的是一堆 `.entry` / `.toggable` / `.tokenName` 类名，但整份仓库里没有对应的 CSS，所以树是一坨没有缩进、没有边框的纯文本。这里按站点自己的 `--spirit-*` 变量补了一套（`.ast-tool-tree-root` 下），缩进、展开箭头、token 配色、悬停高亮都在里面
+- **自动聚焦从来没生效过**。`position`（光标位置）这个 prop 上游定义了但没往 `<Tree>` 上传，于是「展开到光标所在节点」这条链路永远是 `undefined`。现在编辑器光标一动就往下传，配合 `focusNodes` 滚到那个节点
+- **YAML 树上每个节点都叫 "Object"**。上游只有 estree / json 两套适配配置，YAML 走 json 那套，而 json 那套取名字是 `node.type || node.kind || 'Object'` —— yaml v2 的节点这两个字段都没有。现在给 YAML 单开一套配置，名字从 `isMap` / `isSeq` / `isScalar` / `isAlias` / `isPair` / `isDocument` 判断。顺带一提 yaml v2 的 `range` 是三段的 `[start, valueEnd, nodeEnd]`，第三段还带着后面的换行，直接拿来高亮会多选一截，只取前两段
+- **JSON 的节点本来没有源码区间**。上游用 `json-to-ast`，而它的 `nodeToRange` 直接写死 `() => null`，也就是 JSON 视图里悬停高亮是无效的。这里换成仓库里已有的 `jsonc-parser`，节点摊平成 `{type, value, key, children, start, end}` 并给上真实区间。摊平这一步不能省：jsonc 的节点自带 `length` 字段，而树是拿「有没有数字 `length`」判断数组的，留着它每个对象都会被渲染成 `[ ... ]`；`parent` 是个回指针，留着则是死循环
+- **`stringify` 的对象分支会栈溢出**。上游写的是 `JSON.stringify(value, (k, v) => stringify(v))`，一进对象就递归回自己，只是恰好没被树的渲染路径走到
+- **序列化把共享引用当成环**。上游用一个「见过的对象」Set 判断环，结果同一份对象被两处引用（babel 的注释对象、YAML 的锚点）全被写成 `[Circular]`。改成只在当前祖先链上找环，真环照写 `[Circular]`
+- **显示选项的存档没有校验**。上游读 localStorage 就直接 `JSON.parse`，手改坏一次就在 render 里抛异常白屏。现在解析失败 / 类型不对 / 多出来的键都退回默认值
+- **locationProps 是死的**。适配器的 `isLocationProp()` 在 `isInRange()` / `hasChildrenInRange()` 里都有判断，但上游从没给任何一套配置填过 `locationProps`，于是这两道判断恒不成立。这里给 estree / json / yaml 各填上（分别对应它们「位置信息」开关藏掉的那些键）
+- **切解析器的中间那一拍会拿错实例**。上游把「当前 parser」和「解析库实例」分开存，切解析器时 parser 先变、实例后到，而 `[code, parser]` 那个 effect 立刻就调 `parseCode()`，于是变成拿新 parser 的方法去调旧 parser 的实例 —— 从 acorn 切回 babel 时会跑 `babel.parse(acorn)`，acorn 收下 babel 那份没有 `ecmaVersion` 的 options，控制台冒一句警告，树还会先用错的那份结果闪一下。这里把两者绑成一个 `{ parser, instance }`，对不上就不可能发生
+
+体积：AST 工具那份 chunk 约 127 KB（gzip 约 40 KB），Babel 解析器单独一份 `lib-*.js` 约 285 KB（gzip 约 72 KB），`acorn-*.js` 约 118 KB（gzip 约 35 KB），yaml 约 4 KB，样式一份 `AstExplorer-*.css` 约 3 KB。monaco 的 `editor.worker` / `json.worker` 跟 JSON 工具是同一份产物（导入写法相同，打包后同名），没有多出一份。全部都只在打开 AST 工具时才请求。
 
 ## 构建为 Chrome 扩展
 
