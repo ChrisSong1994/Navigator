@@ -3,6 +3,8 @@
  * 浏览器里对应的是 <input type="file"> 和 File System Access API（不支持时退到 <a download>）。
  *
  * 路径在这里是拿不到也留不住的，所以历史记录改成存内容，见 ./history.ts。
+ *
+ * JSON 与 Markdown 共用这一份，各自的 accept / 类型描述 / MIME / 后缀当参数传进来。
  */
 
 export interface PickedFile {
@@ -14,6 +16,17 @@ export interface SavedFile {
   name: string
 }
 
+export interface TextFileKind {
+  /** 文件选择框的 accept 串 */
+  accept: string
+  /** 保存对话框里那句类型描述，比如「JSON 文件」 */
+  description: string
+  /** Blob 的 MIME */
+  mime: string
+  /** 没有后缀的建议名用得上，比如 Untitled + .md */
+  extension: string
+}
+
 /** 保存对话框的取消；Chrome 抛 AbortError，别的实现可能抛别的 */
 function isAbort(error: unknown): boolean {
   return (error as DOMException | undefined)?.name === 'AbortError'
@@ -23,11 +36,11 @@ function isAbort(error: unknown): boolean {
  * 弹系统文件选择框。用户取消时 change 事件不会触发，只能靠窗口重新获得焦点来判断——
  * 拿到焦点后再等一小会儿，能选中文件的路径下 change 会先到。
  */
-export function pickJsonFile(): Promise<PickedFile | null> {
+export function pickTextFile(accept: string): Promise<PickedFile | null> {
   return new Promise((resolve) => {
     const input = document.createElement('input')
     input.type = 'file'
-    input.accept = '.json,.json5,application/json,text/plain'
+    input.accept = accept
 
     let settled = false
     const finish = (value: PickedFile | null) => {
@@ -59,8 +72,8 @@ export async function readDroppedFile(file: File): Promise<PickedFile> {
   return { name: file.name, content: await file.text() }
 }
 
-function downloadText(content: string, name: string): void {
-  const url = URL.createObjectURL(new Blob([content], { type: 'application/json' }))
+function downloadText(content: string, name: string, mime: string): void {
+  const url = URL.createObjectURL(new Blob([content], { type: mime }))
   const anchor = document.createElement('a')
   anchor.href = url
   anchor.download = name
@@ -81,15 +94,24 @@ declare global {
 }
 
 /**
- * 保存成 .json。优先用系统保存框（能拿到用户取的名字，正好记进历史）；
+ * 保存成文件。优先用系统保存框（能拿到用户取的名字，正好记进历史）；
  * 用户点了取消就返回 null（不写历史）；不支持这个 API 就退到下载，用建议名记历史。
  */
-export async function saveJsonFile(content: string, suggestedName = 'Untitled.json'): Promise<SavedFile | null> {
+export async function saveTextFile(
+  content: string,
+  suggestedName: string,
+  kind: TextFileKind,
+): Promise<SavedFile | null> {
   if (typeof window.showSaveFilePicker === 'function') {
     try {
       const handle = await window.showSaveFilePicker({
         suggestedName,
-        types: [{ description: 'JSON 文件', accept: { 'application/json': ['.json'] } }],
+        types: [
+          {
+            description: kind.description,
+            accept: { [kind.mime]: [kind.extension] },
+          },
+        ],
       })
       const writable = await handle.createWritable()
       await writable.write(content)
@@ -101,6 +123,6 @@ export async function saveJsonFile(content: string, suggestedName = 'Untitled.js
     }
   }
 
-  downloadText(content, suggestedName)
+  downloadText(content, suggestedName, kind.mime)
   return { name: suggestedName }
 }

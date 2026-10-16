@@ -1,0 +1,345 @@
+/**
+ * Markdown 工具自己的样式。
+ *
+ * 原项目是 pages/Markdown/index.less（三条规则）：@import 两份主题 CSS、给 .bytemd 一个算出来的高度、
+ * 藏掉工具栏最后两个按钮。这里：
+ *   - 两份主题 CSS 换成按主题挂 <link>，见 lib/theme.ts；
+ *   - 高度改成 useFillHeight 量出来的（原版 calc(100vh - 68px) 是拿 Electron 标题栏硬凑的）；
+ *   - 藏按钮的写法换了一下（见下面的注释）。
+ * 另外多出的是工具栏 / 历史记录（照 JSON 工具那套，类名统一加 markdown-tool- 前缀）与
+ * bytemd 自带外壳的暗色覆盖 —— bytemd 只出浅色，深色模式下会白底。
+ */
+
+/*
+ * bytemd 与 katex 的样式得自己带上：@bytemd/react 只管挂组件，一行 CSS 都不引，
+ * 缺了它工具栏没有内边距、.bytemd 也没有那个 300px 的高度（原项目 index.less 里也是这么 @import 的）。
+ * 放在最上面，后面的覆盖规则才能靠文档顺序压过它们。
+ */
+@import 'bytemd/dist/index.css';
+/* 数学公式的排版全在 katex 的 CSS 和字体里，不引就是一坨叠在一起的字 */
+@import 'katex/dist/katex.min.css';
+
+:root {
+  --markdown-tool-danger: #cf1322;
+}
+
+[data-theme='dark'] {
+  --markdown-tool-danger: #ff7875;
+}
+
+.markdown-tool-root {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 工具栏 ------------------------------------------------------------------ */
+
+.markdown-tool-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+}
+
+/* 有历史时那个按钮要看得出来 */
+.markdown-tool-toolbar .ant-btn[data-active='true'] {
+  background: var(--spirit-inset);
+  color: var(--spirit-accent);
+}
+
+/* 把「弹出到独立窗口」推到工具栏最右边 */
+.markdown-tool-toolbar-spacer {
+  flex: 1;
+}
+
+/* 历史记录 ---------------------------------------------------------------- */
+
+.markdown-tool-history {
+  width: min(600px, 80vw);
+  max-height: min(60vh, 420px);
+  overflow: auto;
+}
+
+.markdown-tool-history-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 0 6px 8px;
+  border-bottom: 1px solid var(--spirit-border);
+  font-weight: 600;
+}
+
+.markdown-tool-history-empty {
+  padding: 8px 0;
+}
+
+.markdown-tool-history-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.markdown-tool-history-item {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  width: 100%;
+  margin: 4px 0;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--spirit-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.markdown-tool-history-item:hover:not(:disabled) {
+  background: var(--spirit-inset);
+}
+
+.markdown-tool-history-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.markdown-tool-history-info {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.markdown-tool-history-name {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.markdown-tool-history-date,
+.markdown-tool-history-note {
+  color: var(--spirit-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* 编辑器 ------------------------------------------------------------------ */
+
+.markdown-tool-editor {
+  position: relative;
+  min-height: 320px;
+  overflow: hidden;
+  border: 1px solid var(--spirit-border-strong);
+  border-radius: 8px;
+}
+
+/*
+ * @bytemd/react 挂载时会多包一层 div（.markdown-tool-editor > div > .bytemd）。
+ * 这层不跟着撑开的话，下面那句 height:100% 就没有可参考的高度，会退化成按内容撑 ——
+ * 整篇文档多高编辑器就多高，一屏放不下。
+ */
+.markdown-tool-editor > div {
+  height: 100%;
+}
+
+/* bytemd 默认给的是固定 300px，这里由外层量出来的高度说了算 */
+.markdown-tool-editor .bytemd {
+  height: 100%;
+}
+
+.markdown-tool-drop {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--spirit-accent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--spirit-accent) 10%, transparent);
+  color: var(--spirit-text);
+  font-size: 14px;
+  pointer-events: none;
+}
+
+/**
+ * 藏掉工具栏最右边那两项：全屏、以及指向 bytemd 仓库的 GitHub 外链。
+ *
+ * 原项目写的是 [bytemd-tippy-path='4'] / [bytemd-tippy-path='5']：这两个位置在 split 布局下正是那两项，
+ * 但 bytemd 的 mode 默认 auto，卡片窄到一定宽度会切成 tab 布局，右侧的「只写 / 只预览」不渲染、
+ * 后面的位置整体前移两位 —— 按固定 path 藏就会闭眼藏错东西。
+ * 换个写法：两种布局下右边最后两项都正好是那两项。
+ */
+.markdown-tool-editor .bytemd-toolbar-right > .bytemd-toolbar-icon:nth-last-child(-n + 2) {
+  display: none;
+}
+
+/* bytemd 外壳的暗色覆盖 --------------------------------------------------- */
+
+/**
+ * bytemd 只出浅色一套（.bytemd 白底 + .bytemd-toolbar 的 #fafbfc + CodeMirror 的白底黑字），
+ * 深色模式下预览区是暗的、编辑区却是白的。下面把外壳这一层接到仓库的 --spirit-* 上，
+ * 代码高亮与 .markdown-body 的排版色由 lib/theme.ts 挂的那两份主题 CSS 负责。
+ */
+[data-theme='dark'] .markdown-tool-editor .bytemd {
+  border-color: var(--spirit-border-strong);
+  background-color: var(--spirit-surface);
+  color: var(--spirit-text);
+}
+
+[data-theme='dark'] .markdown-tool-editor .bytemd-toolbar {
+  border-bottom-color: var(--spirit-border);
+  background-color: var(--spirit-inset);
+}
+
+[data-theme='dark'] .markdown-tool-editor .bytemd-toolbar-icon:hover,
+[data-theme='dark'] .markdown-tool-editor .bytemd-dropdown-item:hover {
+  background-color: var(--spirit-inset-hover);
+}
+
+[data-theme='dark'] .markdown-tool-editor .bytemd-toolbar-icon-active,
+[data-theme='dark'] .markdown-tool-editor .bytemd-toolbar-tab-active,
+[data-theme='dark'] .markdown-tool-editor .bytemd-toc-active,
+[data-theme='dark'] .markdown-tool-editor .bytemd-sidebar-close:hover,
+[data-theme='dark'] .markdown-tool-editor .bytemd-status-right span:hover {
+  color: var(--spirit-accent);
+}
+
+[data-theme='dark'] .markdown-tool-editor .bytemd-sidebar,
+[data-theme='dark'] .markdown-tool-editor .bytemd-status,
+[data-theme='dark'] .markdown-tool-editor .bytemd-split .bytemd-preview {
+  border-color: var(--spirit-border);
+}
+
+[data-theme='dark'] .markdown-tool-editor .bytemd-sidebar ul,
+[data-theme='dark'] .markdown-tool-editor .bytemd-editor .CodeMirror pre.CodeMirror-placeholder,
+[data-theme='dark'] .markdown-tool-editor .bytemd-status {
+  color: var(--spirit-muted);
+}
+
+[data-theme='dark'] .markdown-tool-editor .bytemd-toc-active {
+  background-color: var(--spirit-inset-hover);
+}
+
+[data-theme='dark'] .markdown-tool-editor .bytemd-help-title,
+[data-theme='dark'] .markdown-tool-editor .bytemd-dropdown-title {
+  border-bottom-color: var(--spirit-border);
+  color: var(--spirit-text);
+}
+
+[data-theme='dark'] .markdown-tool-editor .bytemd-status-error {
+  color: var(--markdown-tool-danger);
+}
+
+/* 编辑区（CodeMirror）：bytemd 带的是 CM5 的默认亮色主题，暗色下整块得自己换 */
+
+[data-theme='dark'] .markdown-tool-editor .CodeMirror {
+  background-color: var(--spirit-surface);
+  color: var(--spirit-text);
+}
+
+[data-theme='dark'] .markdown-tool-editor .CodeMirror-gutters {
+  border-right-color: var(--spirit-border);
+  background-color: var(--spirit-surface);
+}
+
+[data-theme='dark'] .markdown-tool-editor .CodeMirror-linenumber,
+[data-theme='dark'] .markdown-tool-editor .CodeMirror-guttermarker,
+[data-theme='dark'] .markdown-tool-editor .CodeMirror-cursor {
+  color: var(--spirit-muted);
+}
+
+[data-theme='dark'] .markdown-tool-editor .CodeMirror-cursor {
+  border-left-color: var(--spirit-text);
+}
+
+[data-theme='dark'] .markdown-tool-editor .CodeMirror-selected,
+[data-theme='dark'] .markdown-tool-editor .CodeMirror-focused .CodeMirror-selected {
+  background-color: color-mix(in srgb, var(--spirit-accent) 30%, transparent);
+}
+
+[data-theme='dark'] .markdown-tool-editor .CodeMirror-activeline-background {
+  background-color: color-mix(in srgb, var(--spirit-text) 6%, transparent);
+}
+
+[data-theme='dark'] .markdown-tool-editor .cm-searching {
+  background-color: color-mix(in srgb, var(--spirit-accent) 40%, transparent);
+}
+
+/* CM5 默认主题的 token 色都是往白底上配的（#00f / #a11 / #555），暗底上几乎看不清 */
+[data-theme='dark'] .markdown-tool-editor .cm-s-default .cm-header {
+  color: #6cb6ff;
+}
+
+[data-theme='dark'] .markdown-tool-editor .cm-s-default .cm-quote {
+  color: #7ee787;
+}
+
+[data-theme='dark'] .markdown-tool-editor .cm-s-default .cm-keyword {
+  color: #d2a8ff;
+}
+
+[data-theme='dark'] .markdown-tool-editor .cm-s-default .cm-atom {
+  color: #79c0ff;
+}
+
+[data-theme='dark'] .markdown-tool-editor .cm-s-default .cm-number,
+[data-theme='dark'] .markdown-tool-editor .cm-s-default .cm-string-2 {
+  color: #ffa657;
+}
+
+[data-theme='dark'] .markdown-tool-editor .cm-s-default .cm-def,
+[data-theme='dark'] .markdown-tool-editor .cm-s-default .cm-variable-2 {
+  color: #82aaff;
+}
+
+[data-theme='dark'] .markdown-tool-editor .cm-s-default .cm-variable-3,
+[data-theme='dark'] .markdown-tool-editor .cm-s-default .cm-type {
+  color: #56d4bc;
+}
+
+[data-theme='dark'] .markdown-tool-editor .cm-s-default .cm-comment {
+  color: #8b949e;
+}
+
+[data-theme='dark'] .markdown-tool-editor .cm-s-default .cm-string {
+  color: #a5d6ff;
+}
+
+[data-theme='dark'] .markdown-tool-editor .cm-s-default .cm-meta,
+[data-theme='dark'] .markdown-tool-editor .cm-s-default .cm-qualifier,
+[data-theme='dark'] .markdown-tool-editor .cm-s-default .cm-hr {
+  color: #9aa4b2;
+}
+
+[data-theme='dark'] .markdown-tool-editor .cm-s-default .cm-builtin {
+  color: #b392f0;
+}
+
+[data-theme='dark'] .markdown-tool-editor .cm-s-default .cm-bracket {
+  color: #a5b0bf;
+}
+
+[data-theme='dark'] .markdown-tool-editor .cm-s-default .cm-tag {
+  color: #7ee787;
+}
+
+[data-theme='dark'] .markdown-tool-editor .cm-s-default .cm-attribute,
+[data-theme='dark'] .markdown-tool-editor .cm-s-default .cm-link {
+  color: #79c0ff;
+}
+
+[data-theme='dark'] .markdown-tool-editor .cm-negative {
+  color: #ffa198;
+}
+
+[data-theme='dark'] .markdown-tool-editor .cm-positive {
+  color: #7ee787;
+}
+
+[data-theme='dark'] .markdown-tool-editor .cm-s-default .cm-error,
+[data-theme='dark'] .markdown-tool-editor .cm-invalidchar {
+  color: var(--markdown-tool-danger);
+}

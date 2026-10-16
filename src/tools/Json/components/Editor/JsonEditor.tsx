@@ -2,8 +2,9 @@ import { CloseOutlined } from '@ant-design/icons'
 import { Button, Tooltip } from 'antd'
 import { memo } from 'react'
 
-import { pickJsonFile } from '../../lib/file.ts'
-import { isEmpty } from '../../lib/util.ts'
+import { pickTextFile } from '../../../lib/file.ts'
+import { JSON_FILE_KIND } from '../../lib/kind.ts'
+import { isEmpty } from '../../../lib/util.ts'
 import BaseEditor from './BaseEditor.tsx'
 import { EEditorLanguage } from './index.ts'
 
@@ -28,7 +29,7 @@ const JsonEditor = (props: IProps) => {
         language={EEditorLanguage.JSON}
         value={value}
         tipShow={true}
-        onImport={async () => (await pickJsonFile())?.content ?? null}
+        onImport={async () => (await pickTextFile(JSON_FILE_KIND.accept))?.content ?? null}
         onChange={onChange}
       />
       {errorShow ? (

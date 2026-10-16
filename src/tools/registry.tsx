@@ -1,4 +1,4 @@
-import { BgColorsOutlined, CodeOutlined } from '@ant-design/icons'
+import { BgColorsOutlined, CodeOutlined, FileMarkdownOutlined } from '@ant-design/icons'
 import { lazy } from 'react'
 import type { ComponentType, ReactNode } from 'react'
 
@@ -32,6 +32,13 @@ export const TOOLS: ToolEntry[] = [
     description: '格式化 / 压缩 / 校验 / 修复 / JSONPath / 结构图',
     icon: <CodeOutlined />,
     content: lazy(() => import('./Json/index.tsx')),
+  },
+  {
+    key: 'markdown',
+    title: 'Markdown',
+    description: '编写 / 预览 / 导入导出 .md / 公式、图表与代码高亮',
+    icon: <FileMarkdownOutlined />,
+    content: lazy(() => import('./Markdown/index.tsx')),
   },
 ]
 

@@ -15,8 +15,8 @@ import {
   repairJsonText,
   unescapeJsonText,
 } from '../src/tools/Json/lib/json.ts'
-import { addHistoryEntry, removeHistoryEntry } from '../src/tools/Json/lib/history.ts'
-import { formatTime, isEmpty } from '../src/tools/Json/lib/util.ts'
+import { addHistoryEntry, removeHistoryEntry } from '../src/tools/lib/history.ts'
+import { formatTime, isEmpty } from '../src/tools/lib/util.ts'
 import {
   cmykToRgb,
   derive,
@@ -33,6 +33,8 @@ import {
   rgbToHsv,
 } from '../src/tools/Color/lib/color.ts'
 import { addRecord, removeRecord, renameRecord } from '../src/tools/Color/lib/records.ts'
+import { JSON_FILE_KIND } from '../src/tools/Json/lib/kind.ts'
+import { MARKDOWN_FILE_KIND } from '../src/tools/Markdown/lib/kind.ts'
 
 let passed = 0
 const test = (name, fn) => {
@@ -358,5 +360,24 @@ test('颜色记录：记录、改名、删除', () => {
   )
   assert.equal(removeRecord(renamed, '没有这个 key').length, 2)
 })
+
+/* 导入 / 保存的文件类型 ---------------------------------------------------- */
+
+test('文件类型：accept 里得含扩展名，mime / 描述不缺（选文件对话框靠它）', () => {
+  for (const [label, kind] of [
+    ['JSON', JSON_FILE_KIND],
+    ['Markdown', MARKDOWN_FILE_KIND],
+  ]) {
+    assert.ok(kind.accept.includes(kind.extension), `${label} 的 accept 里没有 ${kind.extension}`)
+    assert.ok(kind.mime, `${label} 缺 mime`)
+    assert.ok(kind.description, `${label} 缺描述`)
+  }
+
+  // 存文件对话框的默认后缀就是它，写错的话存出来是个没有后缀的文件
+  assert.equal(MARKDOWN_FILE_KIND.extension, '.md')
+  assert.equal(JSON_FILE_KIND.extension, '.json')
+})
+
+// AST 那边几个用例要等 loadParser 的动态 import
 
 console.log(`\n工具逻辑冒烟：${passed} 项通过${process.exitCode ? '，有失败项' : ''}`)

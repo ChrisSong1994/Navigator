@@ -14,7 +14,7 @@
 - Bing 壁纸：关闭、从最近 8 天中选取、按间隔自动轮播、自定义图片地址；配置里只持久化一个图片直链
 - Chrome 书签双向同步：手动从书签栏 /「导航精灵」拉取，或把当前配置推送 / 覆盖到书签栏下的「导航精灵」文件夹
 - 数据导入导出：标准配置 JSON，以及 Chrome 书签 HTML
-- 工具箱：顶栏入口弹出工具抽屉，选中后整页打开该工具，左上角返回箭头回首页；目前有颜色工具（取色面板、HEX / RGB / CMYK / HSV / HSL 互转、颜色记录）和 JSON 工具（格式化 / 压缩 / 校验并给出行列与出错片段 / 修复 / JSON5 兼容解析 / 转义与去转义 / 上传下载），工具界面按需懒加载
+- 工具箱：顶栏入口弹出工具抽屉，选中后整页打开该工具，左上角返回箭头回首页；目前有颜色工具（取色面板、HEX / RGB / CMYK / HSV / HSL 互转、颜色记录）、JSON 工具（格式化 / 压缩 / 校验并给出行列与出错片段 / 修复 / JSON5 兼容解析 / 转义与去转义 / 上传下载）和 Markdown 工具（编辑 + 预览、GFM、公式、图表、代码高亮、导入导出 .md），工具界面按需懒加载
 
 ## 数据流
 
@@ -125,6 +125,29 @@ chrome_bookmarks_demo.html ──pnpm import:bookmarks──▶ global_original.
 体积：JSON 工具那份 chunk 约 5.2 MB（gzip 约 1.5 MB），ELK 布局单独打成 `elk.bundled-*.js`（约 1.4 MB），monaco 的两个 worker 各占一份（`editor.worker` 约 260 KB、`json.worker` 约 390 KB）。这些都只在打开工具时请求，新标签页首屏不为它们付出字节。
 
 扩展里的一个坑：ELK 必须跑在主线程上。reaflow 默认给 ELK 传一个 base64 `data:` URL 的 Worker，而扩展页面的 CSP 是 `script-src 'self'`（`worker-src` 未设置时回落到它），data: / blob: 都不在其中 —— worker 直接被拦掉，布局永远不返回、画布空着，而且 manifest 里补 `worker-src` 也没用（Chrome 的扩展默认 CSP 只放行 `'self' 'wasm-unsafe-eval' 'inline-speculation-rules'` 和本机地址）。`vite.config.ts` 因此把 `elkjs/lib/elk-api` 别名到 `src/tools/Json/GraphView/lib/elkMainThread.ts`，丢掉 `workerFactory` 走 `elk.bundled` 的进程内实现。
+
+### Markdown 工具
+
+从 `developer-assistant` 的 `src/renderer/pages/Markdown` 搬过来，界面与交互保持原样：
+
+- 左编辑右预览（bytemd，底层 CodeMirror 5），预览支持 GFM：表格、任务列表、脚注、`~~删除线~~`、gemoji（`:thumbsup:` → 👍）、自动链接
+- 公式（KaTeX）、图表（mermaid）、代码块高亮（highlight.js），都随预览即时渲染
+- 工具栏（左边一排）：复制、导入 `.md`、保存 / 导出 `.md`（优先 `showSaveFilePicker`，取消就当没发生）、历史记录、弹出到独立窗口、清除
+- 历史记录：最多 20 条存在 localStorage（`navigator.markdown.history`，保存 / 弹窗同步时各记一条，内容超过 256 KB 只留名字和时间），点一条回填
+- 弹出到独立窗口：`window.open` 开 `/?tool=markdown&popup=1`，两个窗口用 BroadcastChannel 双向同步内容；弹窗里那个按钮变成「同步到主窗口」
+- 拖拽 `.md` 文件到编辑区直接载入（原项目没有这条路径，JSON 那边有，保持一致）
+- bytemd 自带的那排右侧图标（目录、帮助、仅编辑区 / 仅预览区）留在原地，分栏 ↔ 单栏由它切换
+
+原版右上角那排图标里，「全屏」和「GitHub 源码外链」两个被藏掉了（全屏在工具体内没意义，外链会被扩展 CSP 拦）。原版靠 `[bytemd-tippy-path='4'/'5']` 选中它们，这是写死的序号；这里改成 `.bytemd-toolbar-right > .bytemd-toolbar-icon:nth-last-child(-n + 2)` —— 分栏布局有 6 个图标、窄屏 tab 布局只有 4 个，最后两个始终是「全屏」和「源代码」，按序号选会在 tab 布局下藏错。
+
+两个必须手写的样式：
+
+- `@bytemd/react` 自己不 import 任何 CSS，`bytemd/dist/index.css` 和 `katex/dist/katex.min.css` 都得手动引（原项目是在 `index.less` 里 `@import url(...)`）。漏掉的话编辑器仍然能跑，只是工具栏零内边距、`.bytemd` 撑到 7000+ px 高、颜色全继承站点主题 —— 静态检查看不出来
+- `@bytemd/react` 会多套一层普通 `<div>`，所以 `.bytemd { height: 100% }` 得先让那层也有高度（`.markdown-tool-editor > div { height: 100% }`），否则百分比高度算成 `auto`
+
+暗色适配走站点自己的 `[data-theme='dark']` 覆盖：`.bytemd` / `.bytemd-toolbar` / `.CodeMirror` / `.CodeMirror-gutters` 的底色边框换成 `--spirit-*`，再补一套 `.cm-s-default .cm-*` 的 token 颜色。预览区的 markdown 样式和代码高亮主题（`github-markdown-light` / `vs-*.css` ↔ `github-markdown-dark` / `vs2015`）由 `useColorScheme()` 跟着切换。
+
+体积：Markdown 工具那份 chunk 约 720 KB（gzip 约 225 KB，里面 mermaid 约 256 KB、katex 约 259 KB），样式单独一份 `Markdown-*.css` 约 49 KB（gzip 12 KB），另有 59 个 KaTeX 字体文件（woff2 / woff / ttf，合计约 1.1 MB）随需要加载。同样只在打开工具时才请求。
 
 ## 构建为 Chrome 扩展
 

@@ -12,9 +12,9 @@ import { CustomNode } from './CustomNode/index.tsx'
 import { ZoomControl } from './ZoomControl.tsx'
 import ScreenAction from './ScreenAction.tsx'
 import useGraph from './stores/useGraph.ts'
-import { useColorScheme } from './hooks/useColorScheme.ts'
+import { useColorScheme } from '../../hooks/useColorScheme.ts'
 import { useDebouncedValue } from './hooks/useDebouncedValue.ts'
-import { debounce } from '../lib/util.ts'
+import { debounce } from '../../lib/util.ts'
 
 /**
  * JSON 结构图（reaflow + ELK 布局）。

@@ -15,9 +15,9 @@ import {
 import { Button, Empty, Popover, Tooltip } from 'antd'
 import type { ReactNode } from 'react'
 
-import type { JsonHistoryItem } from '../lib/history.ts'
-import { formatTime } from '../lib/util.ts'
-import Copy from './Copy.tsx'
+import Copy from '../../components/Copy.tsx'
+import type { HistoryItem } from '../../lib/history.ts'
+import { formatTime } from '../../lib/util.ts'
 
 /**
  * 编辑器上方那排图标按钮，顺序与原项目一致：
@@ -51,7 +51,7 @@ function ToolbarButton({
 
 export interface ToolbarProps {
   value: string
-  history: JsonHistoryItem[]
+  history: HistoryItem[]
   /** 当前处于弹窗模式：最后一个动作从「弹出到独立窗口」换成「同步到主窗口」 */
   popup: boolean
   jsonPathOpen: boolean
@@ -62,8 +62,8 @@ export interface ToolbarProps {
   onCompress: () => void
   onRepair: () => void
   onClear: () => void
-  onPickHistory: (item: JsonHistoryItem) => void
-  onDeleteHistory: (item: JsonHistoryItem) => void
+  onPickHistory: (item: HistoryItem) => void
+  onDeleteHistory: (item: HistoryItem) => void
   onClearHistory: () => void
   onToggleJsonPath: () => void
   onToggleGraph: () => void

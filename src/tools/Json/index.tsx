@@ -16,23 +16,29 @@ import { GraphView } from './GraphView/index.tsx'
 import JsonPath from './JsonPath/index.tsx'
 import JsonEditor from './components/Editor/JsonEditor.tsx'
 import { Toolbar } from './components/Toolbar.tsx'
-import { useFillHeight } from './hooks/useFillHeight.ts'
-import { pickJsonFile, saveJsonFile } from './lib/file.ts'
-import {
-  addHistoryEntry,
-  readHistory,
-  removeHistoryEntry,
-  writeHistory,
-  type JsonHistoryItem,
-} from './lib/history.ts'
+import { saveTextFile, pickTextFile } from '../lib/file.ts'
+import { JSON_FILE_KIND } from './lib/kind.ts'
+import { createHistoryStore } from '../lib/history.ts'
+import type { HistoryItem } from '../lib/history.ts'
 import { formatJson, minifyJson, parseJsonText, repairJsonText } from './lib/json.ts'
 import type { JsonParseError } from './lib/json.ts'
-import { isEmpty } from './lib/util.ts'
-import { createBridge, isPopupPage, openJsonPopup } from './lib/popup.ts'
+import { isEmpty } from '../lib/util.ts'
+import { createBridge, isPopupPage, openToolPopup } from '../lib/popup.ts'
+import { useFillHeight } from '../hooks/useFillHeight.ts'
 import './Json.css'
 
 /** 面板里的编辑器填满所在栏 */
 const FILL_STYLE = { height: '100%' }
+
+/** 本工具在公共层里的身份：历史存哪儿、弹窗叫什么（文件类型见 lib/kind.ts） */
+const HISTORY = createHistoryStore('navigator.json.history')
+
+const POPUP = {
+  windowName: 'navigator-json-popup',
+  channelName: 'navigator-json-tool',
+  width: 1100,
+  height: 800,
+} as const
 
 /** 解析报错的展示文案：一句毛病 + 位置 + 带插入符的那一行 */
 function formatParseError(error: JsonParseError): string {
@@ -44,7 +50,7 @@ function formatParseError(error: JsonParseError): string {
 const JsonTool = () => {
   const [value, setValue] = useState('')
   const [currentFileName, setCurrentFileName] = useState<string | null>(null)
-  const [history, setHistory] = useState<JsonHistoryItem[]>(() => readHistory())
+  const [history, setHistory] = useState<HistoryItem[]>(() => HISTORY.read())
   const [jsonPathOpen, setJsonPathOpen] = useState(false)
   const [graphOpen, setGraphOpen] = useState(false)
   /** 报错面板被手动关掉时记下当时的内容；内容一变就重新显示 */
@@ -63,23 +69,23 @@ const JsonTool = () => {
     parsed.ok || isEmpty(value) || dismissedAt === value ? null : formatParseError(parsed)
 
   // 改一次存一次。历史最多 20 条、内容也有上限，不值得为它做合并写入
-  const rememberHistory = (items: JsonHistoryItem[]) => {
+  const rememberHistory = (items: HistoryItem[]) => {
     setHistory(items)
-    writeHistory(items)
+    HISTORY.write(items)
   }
 
   const handleImport = async () => {
-    const picked = await pickJsonFile()
+    const picked = await pickTextFile(JSON_FILE_KIND.accept)
     if (!picked) return
     setValue(picked.content)
     setCurrentFileName(picked.name)
   }
 
   const handleSave = async () => {
-    const saved = await saveJsonFile(value, currentFileName ?? 'Untitled.json')
+    const saved = await saveTextFile(value, currentFileName ?? 'Untitled.json', JSON_FILE_KIND)
     if (!saved) return
     setCurrentFileName(saved.name)
-    rememberHistory(addHistoryEntry(history, saved.name, value))
+    rememberHistory(HISTORY.add(history, saved.name, value))
   }
 
   // 美化 / 压缩：内容解析不通就什么都不做（原项目同样）
@@ -109,14 +115,14 @@ const JsonTool = () => {
     setCurrentFileName(null)
   }
 
-  const handlePickHistory = (item: JsonHistoryItem) => {
+  const handlePickHistory = (item: HistoryItem) => {
     if (item.contentOmitted) return
     setValue(item.content)
     setCurrentFileName(item.name)
   }
 
-  const handleDeleteHistory = (item: JsonHistoryItem) => {
-    rememberHistory(removeHistoryEntry(history, item.id))
+  const handleDeleteHistory = (item: HistoryItem) => {
+    rememberHistory(HISTORY.remove(history, item.id))
   }
 
   // JSONPath 与 Graph 互斥，开一个关另一个（原项目同样）
@@ -131,7 +137,7 @@ const JsonTool = () => {
   }
 
   const handleOpenPopup = () => {
-    const result = openJsonPopup()
+    const result = openToolPopup('json', POPUP)
     if (result.status === 'blocked') message.warning('浏览器拦下了这个弹窗，请允许本站弹出窗口')
     else if (result.status === 'focused') message.info('JSON 弹窗已存在，已聚焦')
   }
@@ -146,7 +152,7 @@ const JsonTool = () => {
   const bridgeRef = useRef<ReturnType<typeof createBridge> | null>(null)
 
   useEffect(() => {
-    const bridge = createBridge((incoming) => {
+    const bridge = createBridge(POPUP.channelName, (incoming) => {
       if (incoming.type === 'hello') {
         // 弹窗刚打开，把主窗口当前这份内容递过去
         bridge.send({

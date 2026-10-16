@@ -3,7 +3,7 @@ import { Edge } from 'reaflow'
 import type { EdgeProps } from 'reaflow'
 
 import useGraph from '../stores/useGraph.ts'
-import { useColorScheme } from '../hooks/useColorScheme.ts'
+import { useColorScheme } from '../../../hooks/useColorScheme.ts'
 
 /** 连线：点一下跳到它指向的节点；悬停变蓝 */
 const CustomEdgeWrapper = (props: EdgeProps) => {
