@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
@@ -14,6 +15,15 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: { port: PORT },
   preview: { port: PORT },
+  resolve: {
+    alias: {
+      // reaflow 内联的 base64 ELK worker 在扩展页面会被 CSP（script-src 'self'）拦掉，
+      // 换成主线程算布局的版本；详见 src/tools/Json/GraphView/lib/elkMainThread.ts
+      'elkjs/lib/elk-api': fileURLToPath(
+        new URL('./src/tools/Json/GraphView/lib/elkMainThread.ts', import.meta.url),
+      ),
+    },
+  },
   build: {
     // 内置配置（含 base64 图标）本身就有 MB 级别，放宽提示阈值
     chunkSizeWarningLimit: 2048,

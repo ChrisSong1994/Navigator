@@ -10,7 +10,14 @@ import {
 } from "antd";
 import { App as AntApp, ConfigProvider as AntConfigProvider } from "antd";
 import zhCN from "antd/locale/zh_CN";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { AppHeader } from "./components/AppHeader.tsx";
 import { ConfigDrawer } from "./components/ConfigDrawer.tsx";
 import { GlobalSearch } from "./components/GlobalSearch.tsx";
@@ -18,11 +25,14 @@ import { GroupToc } from "./components/GroupToc.tsx";
 import { LinkFormModal } from "./components/LinkFormModal.tsx";
 import { LinkSortProvider } from "./components/LinkSortProvider.tsx";
 import { LinkGroupView } from "./components/LinkViews.tsx";
+import { ToolPage } from "./components/ToolPage.tsx";
 import { WallpaperLayer } from "./components/WallpaperLayer.tsx";
 import { ConfigProvider } from "./config/ConfigProvider.tsx";
 import { useConfig } from "./config/configContext.ts";
 import { DEFAULT_PRIMARY_COLOR } from "./config/schema.ts";
 import { useResolvedTheme } from "./hooks/useResolvedTheme.ts";
+import { findTool } from "./tools/registry.tsx";
+import { clearToolQuery, setToolQuery, toolFromQuery } from "./tools/query.ts";
 import { WallpaperProvider } from "./wallpaper/WallpaperProvider.tsx";
 
 /** 预览区里的虚线按钮（新增分组 / 空分组加链接）：底色由调用方按所在层级给 */
@@ -124,6 +134,7 @@ function PageSkeleton() {
           <div className="ml-auto flex items-center gap-2">
             <SkeletonBar className="h-8 w-8 rounded-lg" />
             <SkeletonBar className="h-8 w-8 rounded-lg" />
+            <SkeletonBar className="h-8 w-8 rounded-lg" />
           </div>
         </div>
       </header>
@@ -154,6 +165,17 @@ function PageSkeleton() {
 function Page() {
   const { settings, groups, groupIds, configReady } = useConfig();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  /**
+   * 工具箱里正在打开的工具；null 表示首页。
+   * 初值从地址栏来：刷新、别人发来的 `?tool=json` 链接、以及「弹出到独立窗口」开的那个窗口，
+   * 都要直接落在工具上而不是先闪一下首页。工具名认不出来就当家页处理。
+   */
+  const [activeTool, setActiveTool] = useState<string | null>(() => {
+    const key = toolFromQuery();
+    return key && findTool(key) ? key : null;
+  });
+  /** 进工具页之前首页的滚动位置，返回时回到原处 */
+  const homeScrollRef = useRef(0);
   const [activeGroupId, setActiveGroupId] = useState<string | null>(
     groupIds[0] ?? null,
   );
@@ -204,14 +226,50 @@ function Page() {
     setActiveGroupId(id);
   }, []);
 
+  const openTool = useCallback(
+    (key: string) => {
+      // 只有从首页点进来才记位置：在工具页里换工具时，别把工具页的滚动位置记成首页的
+      if (activeTool === null) homeScrollRef.current = window.scrollY;
+      setActiveTool(key);
+      setToolQuery(key);
+    },
+    [activeTool],
+  );
+
+  const closeTool = useCallback(() => {
+    setActiveTool(null);
+    clearToolQuery();
+  }, []);
+
+  // 工具页是整页替换首页（首页整个卸载），重新挂载时滚动位置会归零；
+  // 返回时恢复，别把用户从列表深处弹回顶部。
+  // 用 layout effect 是为了在绘制前落位，否则会闪一帧顶部
+  useLayoutEffect(() => {
+    if (!activeTool) window.scrollTo({ top: homeScrollRef.current });
+  }, [activeTool]);
+
   // 扩展环境且本机还没有同步种子时，配置只能异步读：先渲染骨架，
   // 不用内置配置画一版（卡片视图、内置分组）再跳成用户配置
   if (!configReady) return <PageSkeleton />;
 
+  // 工具页整页替换首页，返回箭头把它换回来
+  if (activeTool) {
+    return (
+      <ToolPage
+        toolKey={activeTool}
+        onBack={closeTool}
+        onOpenTool={openTool}
+      />
+    );
+  }
+
   return (
     <div className="spirit-canvas min-h-screen">
       <WallpaperLayer dim={settings.wallpaperDim} blur={settings.wallpaperBlur} />
-      <AppHeader onOpenSettings={() => setDrawerOpen(true)} />
+      <AppHeader
+        onOpenSettings={() => setDrawerOpen(true)}
+        onOpenTool={openTool}
+      />
 
       <main className="mx-auto max-w-[1704px] px-6 pb-20 pt-5 lg:pl-[264px]">
         <GroupToc

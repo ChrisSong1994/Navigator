@@ -1,0 +1,281 @@
+/**
+ * JSON 工具自己的样式。
+ *
+ * 原项目这三个文件合成一个：pages/Json/index.module.less、JsonPath/index.css、components/Editor/index.module.less。
+ * 类名统一加 json-tool- 前缀、跟随工具页卡片宽度，不再往全局 index.css 里塞东西。
+ *
+ * 里面的颜色一律走仓库的 --spirit-* token（原项目写死的 #e9e9e9 / #f5f5f5 / #8c8c8c / red 在深色模式下是白底）。
+ * 报错那支红色没有对应 token，就地补一对明暗值，跟 index.css 里 --spirit-* 的写法一致。
+ */
+
+:root {
+  --json-tool-danger: #cf1322;
+  --json-tool-graph-canvas: #f7f7f7;
+  --json-tool-graph-line-1: #ebe8e8;
+  --json-tool-graph-line-2: #f2eeee;
+  --json-tool-graph-text: #4f5660;
+  --json-tool-graph-node: #f6f8fa;
+}
+
+[data-theme='dark'] {
+  --json-tool-danger: #ff7875;
+  --json-tool-graph-canvas: #14161c;
+  --json-tool-graph-line-1: #22252e;
+  --json-tool-graph-line-2: #1b1e26;
+  --json-tool-graph-text: #c3c8d2;
+  --json-tool-graph-node: #21242c;
+}
+
+.json-tool-root {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 工具栏 ------------------------------------------------------------------ */
+
+.json-tool-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+}
+
+/* JSONPath / Graph 是开关，开着的时候得看得出来 */
+.json-tool-toolbar .ant-btn[data-active='true'] {
+  background: var(--spirit-inset);
+  color: var(--spirit-accent);
+}
+
+/* 把「弹出到独立窗口」推到工具栏最右边（原项目 .json-window-open 的 margin-left: auto） */
+.json-tool-toolbar-spacer {
+  flex: 1;
+}
+
+/* 编辑器 ------------------------------------------------------------------ */
+
+.json-tool-splitter {
+  min-height: 0;
+}
+
+.json-tool-editor-wrap {
+  position: relative;
+  height: 100%;
+}
+
+.json-tool-editor {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid var(--spirit-border-strong);
+  border-radius: 8px;
+}
+
+.json-tool-editor-tip {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: var(--spirit-surface);
+  color: var(--spirit-muted);
+  font-size: 14px;
+  cursor: pointer;
+  /* 整块不接指针，否则空编辑器被这层盖住就点不进去了；只有图标可点（原项目同样） */
+  pointer-events: none;
+}
+
+.json-tool-editor-tip-icon {
+  margin-bottom: 6px;
+  font-size: 42px;
+  pointer-events: auto;
+}
+
+.json-tool-editor-drop {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--spirit-accent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--spirit-accent) 10%, transparent);
+  color: var(--spirit-text);
+  font-size: 14px;
+  pointer-events: none;
+}
+
+/* 报错面板 ---------------------------------------------------------------- */
+
+.json-tool-error-panel {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  left: 8px;
+  z-index: 5;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--spirit-border-strong);
+  border-radius: 8px;
+  background: var(--spirit-surface);
+  box-shadow: var(--spirit-shadow);
+}
+
+.json-tool-error-text {
+  flex: 1;
+  min-width: 0;
+  max-height: 96px;
+  overflow: auto;
+  color: var(--json-tool-danger);
+  /* 报错里带 lib/json.ts 生成的插入符那段，要等宽对齐 */
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+/* 历史记录 ---------------------------------------------------------------- */
+
+.json-tool-history {
+  width: min(600px, 80vw);
+  max-height: min(60vh, 420px);
+  overflow: auto;
+}
+
+.json-tool-history-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 0 6px 8px;
+  border-bottom: 1px solid var(--spirit-border);
+  font-weight: 600;
+}
+
+.json-tool-history-empty {
+  padding: 8px 0;
+}
+
+.json-tool-history-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.json-tool-history-item {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  width: 100%;
+  margin: 4px 0;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--spirit-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.json-tool-history-item:hover:not(:disabled) {
+  background: var(--spirit-inset);
+}
+
+.json-tool-history-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.json-tool-history-info {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.json-tool-history-name {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.json-tool-history-date,
+.json-tool-history-note {
+  color: var(--spirit-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* JSONPath ---------------------------------------------------------------- */
+
+.json-tool-jsonpath {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding-left: 6px;
+}
+
+/* 结果编辑器吃掉剩下的高度；照样式里给的 height: 100% 算，加上上面的头与提示行会溢出被压扁 */
+.json-tool-jsonpath > .json-tool-editor {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+
+.json-tool-jsonpath-header {
+  display: flex;
+  align-items: center;
+}
+
+.json-tool-jsonpath-text {
+  display: flex;
+  align-items: center;
+  min-height: 24px;
+  font-size: 13px;
+}
+
+.json-tool-jsonpath-text.is-error {
+  color: var(--json-tool-danger);
+}
+
+.json-tool-jsonpath-text.is-tip {
+  color: var(--spirit-muted);
+}
+
+.json-tool-cheatsheet {
+  padding: 4px 12px 8px;
+  border-radius: 12px;
+  background: var(--spirit-surface);
+  box-shadow: var(--spirit-shadow);
+}
+
+/* GraphView --------------------------------------------------------------- */
+
+.json-tool-graph {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* 图上盖的两层：加载中的转圈、没东西可画时的提示 */
+.json-tool-graph-loading,
+.json-tool-graph-hint {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.json-tool-graph-loading {
+  background: color-mix(in srgb, var(--spirit-canvas) 55%, transparent);
+}

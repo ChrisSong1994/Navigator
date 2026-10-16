@@ -155,9 +155,12 @@ export function GlobalSearch() {
    * 新标签页里焦点先归浏览器地址栏，而页面没法从浏览器 UI 手里把焦点抢回来——这时挂载期这次 focus()
    * 只是把 activeElement 记成了输入框，真正生效要等页面拿到焦点。所以再补一次：页面第一次真正
    * 拿到焦点时（按 Tab 进页面 / 点一下页面）落一次，之后就还回给用户，不再抢。
+   *
+   * preventScroll：焦点落在顶部输入框时浏览器会顺手把页面滚回可见位置。从工具页返回首页会重新挂载
+   * 这个组件，那就把刚恢复的滚动位置又拱回顶部了——这里只要焦点，不要滚动。
    */
   useEffect(() => {
-    const focusInput = () => inputRef.current?.focus()
+    const focusInput = () => inputRef.current?.focus({ preventScroll: true })
     focusInput()
     if (document.hasFocus()) return
 

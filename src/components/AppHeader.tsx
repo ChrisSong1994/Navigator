@@ -1,16 +1,18 @@
 import { GithubOutlined, SettingOutlined } from "@ant-design/icons";
 import { Button, Tooltip } from "antd";
 import { useConfig } from "../config/configContext.ts";
+import { Toolbox } from "./Toolbox.tsx";
 
 const REPOSITORY_URL = "https://github.com/ChrisSong1994/Navigator";
 const RELEASES_URL = `${REPOSITORY_URL}/releases`;
 
 interface AppHeaderProps {
   onOpenSettings: () => void;
+  onOpenTool: (key: string) => void;
 }
 
-/** 顶栏只放标题、统计和配置入口；搜索 / 筛选收在页面主搜索框里，主题 / 展示模式等开关都收在配置面板里，不重复出现 */
-export function AppHeader({ onOpenSettings }: AppHeaderProps) {
+/** 顶栏只放标题、统计和配置 / 工具箱入口；搜索 / 筛选收在页面主搜索框里，主题 / 展示模式等开关都收在配置面板里，不重复出现 */
+export function AppHeader({ onOpenSettings, onOpenTool }: AppHeaderProps) {
   const { settings, groupIds, linkCount, storageMode } = useConfig();
   const isExtension = storageMode === "sync";
 
@@ -53,6 +55,7 @@ export function AppHeader({ onOpenSettings }: AppHeaderProps) {
           <Tooltip title="配置面板">
             <Button icon={<SettingOutlined />} onClick={onOpenSettings} />
           </Tooltip>
+          <Toolbox onOpenTool={onOpenTool} />
         </div>
       </div>
     </header>

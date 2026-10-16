@@ -14,6 +14,7 @@
 - Bing 壁纸：关闭、从最近 8 天中选取、按间隔自动轮播、自定义图片地址；配置里只持久化一个图片直链
 - Chrome 书签双向同步：手动从书签栏 /「导航精灵」拉取，或把当前配置推送 / 覆盖到书签栏下的「导航精灵」文件夹
 - 数据导入导出：标准配置 JSON，以及 Chrome 书签 HTML
+- 工具箱：顶栏入口弹出工具抽屉，选中后整页打开该工具，左上角返回箭头回首页；目前有 JSON 工具（格式化 / 压缩 / 校验并给出行列与出错片段 / 修复 / JSON5 兼容解析 / 转义与去转义 / 上传下载），工具界面按需懒加载
 
 ## 数据流
 
@@ -93,6 +94,27 @@ chrome_bookmarks_demo.html ──pnpm import:bookmarks──▶ global_original.
 - `Cmd/Ctrl+K` 或 `/` 聚焦搜索框
 
 联想请求在扩展环境经 `service_worker.js` 代理，避免页面跨域限制；普通网页环境尝试直接请求，失败时静默降级为普通搜索。
+
+## 工具箱
+
+顶栏的工具箱按钮弹出工具抽屉，选中一个工具就整页打开它（首页 `/` ↔ 工具页 `/?tool=json`），左上角返回箭头回首页，右上角仍可直接换工具。工具名会写进地址栏，刷新、复制链接、以及「弹出到独立窗口」开出去的那个窗口都能直接落到同一个工具上；认不出的参数当首页处理。
+
+工具内容按需懒加载：不打开工具箱里的工具，就不下载那份 chunk。
+
+### JSON 工具
+
+从 `developer-assistant` 的 `src/renderer/pages/Json` 整套搬过来，界面与交互保持原样，Electron 那部分换成浏览器能力：
+
+- monaco 编辑器（JSON 语法高亮、行号）、格式化 / 压缩 / 校验 / 修复（jsonrepair）/ JSON5 兼容解析 / 转义与去转义 / 复制 / 导入导出文件
+- 校验失败给出行列和出错那一行（带 caret 指到列上）
+- JSONPath 查询与速查表
+- JSON 结构图：reaflow + ELK 分层布局，节点可搜索定位、缩放、全屏
+- 历史记录：最多 20 条存在 localStorage（保存 / 上传 / 弹窗同步时各记一条，内容超过 256 KB 只留名字和时间），点一条回填
+- 弹出到独立窗口：`window.open` 开 `/?tool=json&popup=1`，两个窗口用 BroadcastChannel 双向同步内容
+
+体积：JSON 工具那份 chunk 约 5.2 MB（gzip 约 1.5 MB），ELK 布局单独打成 `elk.bundled-*.js`（约 1.4 MB），monaco 的两个 worker 各占一份（`editor.worker` 约 260 KB、`json.worker` 约 390 KB）。这些都只在打开工具时请求，新标签页首屏不为它们付出字节。
+
+扩展里的一个坑：ELK 必须跑在主线程上。reaflow 默认给 ELK 传一个 base64 `data:` URL 的 Worker，而扩展页面的 CSP 是 `script-src 'self'`（`worker-src` 未设置时回落到它），data: / blob: 都不在其中 —— worker 直接被拦掉，布局永远不返回、画布空着，而且 manifest 里补 `worker-src` 也没用（Chrome 的扩展默认 CSP 只放行 `'self' 'wasm-unsafe-eval' 'inline-speculation-rules'` 和本机地址）。`vite.config.ts` 因此把 `elkjs/lib/elk-api` 别名到 `src/tools/Json/GraphView/lib/elkMainThread.ts`，丢掉 `workerFactory` 走 `elk.bundled` 的进程内实现。
 
 ## 构建为 Chrome 扩展
 
