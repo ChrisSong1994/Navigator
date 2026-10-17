@@ -1,0 +1,201 @@
+/**
+ * Transform 工具自己的样式。
+ *
+ * 上游这里几乎没有样式：`index.module.less` 只有三条规则（.transform-panel 的 flex 与边框、
+ * .panel 的 50% 宽，另有一条 .title 是死 CSS，没有任何地方用），编辑器高度是拿
+ * `calc(100vh - 101px)` 硬凑的。搬进工具页的卡片以后头部高度全变了，所以：
+ *   - 高度换成 useFillHeight 量出来的（见 index.tsx）；
+ *   - 工具栏 / 历史记录照 JSON 与 Markdown 两个工具的写法，类名统一 transform-tool- 前缀。
+ */
+
+:root {
+  --transform-tool-danger: #cf1322;
+}
+
+[data-theme='dark'] {
+  --transform-tool-danger: #ff7875;
+}
+
+.transform-tool-root {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 转换器下拉 -------------------------------------------------------------- */
+
+.transform-tool-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+
+.transform-tool-header-label {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* 工具栏 ------------------------------------------------------------------ */
+
+.transform-tool-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+}
+
+/* 有历史时那个按钮要看得出来 */
+.transform-tool-toolbar .ant-btn[data-active='true'] {
+  background: var(--spirit-inset);
+  color: var(--spirit-accent);
+}
+
+/* 把「弹出到独立窗口」推到工具栏最右边 */
+.transform-tool-toolbar-spacer {
+  flex: 1;
+}
+
+/* 历史记录 ---------------------------------------------------------------- */
+
+.transform-tool-history {
+  width: min(560px, 80vw);
+  max-height: min(60vh, 420px);
+  overflow: auto;
+}
+
+.transform-tool-history-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 0 6px 8px;
+  border-bottom: 1px solid var(--spirit-border);
+  font-weight: 600;
+}
+
+.transform-tool-history-empty {
+  padding: 8px 0;
+}
+
+.transform-tool-history-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.transform-tool-history-item {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  width: 100%;
+  margin: 4px 0;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--spirit-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.transform-tool-history-item:hover:not(:disabled) {
+  background: var(--spirit-inset);
+}
+
+.transform-tool-history-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.transform-tool-history-info {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.transform-tool-history-name {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transform-tool-history-date {
+  color: var(--spirit-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/*
+ * 本工具的条目名会重复（同一个转换器转十次都是「JSON 转 YAML」），所以第二行给的是输入的首行内容。
+ * 那一行多长完全看用户粘了什么，必须截断，否则把弹层撑开。
+ */
+.transform-tool-history-note {
+  display: block;
+  overflow: hidden;
+  color: var(--spirit-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 两块编辑器 -------------------------------------------------------------- */
+
+/* 上游是 .transform-panel：flex + 1px 边框 + 4px 圆角。边框与圆角改到每块编辑器自己身上
+   （两块之间要留缝，整体一个框会把中间那条缝也框进去） */
+.transform-tool-panes {
+  display: flex;
+  gap: 10px;
+  min-height: 320px;
+}
+
+.transform-tool-panes > * {
+  flex: 1;
+  width: calc(50% - 5px);
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--spirit-border-strong);
+  border-radius: 8px;
+}
+
+/* 报错要压在输出那块上，得有个定位父级 */
+.transform-tool-pane {
+  position: relative;
+}
+
+/*
+ * 转换失败时压在输出面板顶部的那一行。只占一行高度、绝对定位，不参与布局，
+ * 免得它一出现就把两块编辑器往下挤（上面量高度的 useFillHeight 观察的是 documentElement）。
+ */
+.transform-tool-error {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  left: 8px;
+  z-index: 5;
+  max-height: 96px;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--spirit-border-strong);
+  border-radius: 8px;
+  background: var(--spirit-surface);
+  color: var(--transform-tool-danger);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+/* 窄屏（工具页本身已经是一列）两块编辑器上下摞起来 */
+@media (max-width: 720px) {
+  .transform-tool-panes {
+    flex-direction: column;
+  }
+
+  .transform-tool-panes > * {
+    width: 100%;
+  }
+}

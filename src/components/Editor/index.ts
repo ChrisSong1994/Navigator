@@ -2,11 +2,21 @@ import type { editor } from 'monaco-editor/esm/vs/editor/editor.api'
 
 /**
  * 编辑器语言。原项目这里是个 enum（26 种语言），但 `erasableSyntaxOnly` 不让写 enum，
- * 而且 JSON 工具只用得上这两种，就退成 const 对象 + 联合类型，调用点写法不变。
+ * 就退成 const 对象 + 联合类型，调用点写法不变。
+ *
+ * 从 JSON 工具挪到公共层：JSON 只要 JSON，Transform 要的是下面那一串。多列出的值不花任何字节，
+ * 真正决定引不引语言的是各处自己的 languages.ts。
  */
 export const EEditorLanguage = {
   PLAINTEXT: 'plaintext',
   JSON: 'json',
+  YAML: 'yaml',
+  GO: 'go',
+  JAVA: 'java',
+  KOTLIN: 'kotlin',
+  TYPESCRIPT: 'typescript',
+  JAVASCRIPT: 'javascript',
+  SQL: 'mysql',
 } as const
 
 export type EEditorLanguage = (typeof EEditorLanguage)[keyof typeof EEditorLanguage]

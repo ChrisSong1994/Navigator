@@ -53,6 +53,9 @@ importers:
       '@monaco-editor/react':
         specifier: ^4.7.0
         version: 4.7.0(monaco-editor@0.52.2)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@wasm-fmt/gofmt':
+        specifier: ^0.7.3
+        version: 0.7.3
       acorn:
         specifier: ^8.19.0
         version: 8.19.0
@@ -74,6 +77,9 @@ importers:
       json5:
         specifier: ^2.2.3
         version: 2.2.3
+      json_typegen_wasm:
+        specifier: ^0.7.0
+        version: 0.7.0
       jsonc-parser:
         specifier: ^3.3.1
         version: 3.3.1
@@ -1052,6 +1058,10 @@ packages:
       oxc-transform-react:
         optional: true
 
+  '@wasm-fmt/gofmt@0.7.3':
+    resolution: {integrity: sha512-nzVTwMxHDOYrHonT7DzjqicbaTYOYPNYeXKPJnDrVUbJjx67Sg/LS1uzlOTWKToGMF8Y8l0u7G5/5Q3/8nHMMA==}
+    engines: {node: '>=16.17.0'}
+
   acorn@8.19.0:
     resolution: {integrity: sha512-oJlA3XiRm7Cyk6qFD2Jn8ak9B7jSy0qy00ADO3+8dpT0LSjFihQYv4C02LFCSYJV3Q37xYwwRy5m+IpIiUzqWw==}
     engines: {node: '>=0.4.0'}
@@ -1786,6 +1796,9 @@ packages:
     resolution: {integrity: sha512-XmOWe7eyHYH14cLdVPoyg+GOH3rYX++KpzrylJwSW98t3Nk+U8XOl8FWKOgwtzdb8lXGf6zYwDUzeHMWfxasyg==}
     engines: {node: '>=6'}
     hasBin: true
+
+  json_typegen_wasm@0.7.0:
+    resolution: {integrity: sha512-xTDD7jlMpXB8S/6lD00aqOmHPuVszG4vtrJTaED8Mb6ziryGtXmtkREWpuvJbWWj45aVFGO3O/WjwxRBLw8dUQ==}
 
   jsonc-parser@3.3.1:
     resolution: {integrity: sha512-HUgH65KyejrUFPvHFPbqOY0rsFip3Bo5wb4ngvdi1EpCYWUQDC5V+Y7mZws+DLkr4M//zQJoanu1SP+87Dv1oQ==}
@@ -3589,6 +3602,8 @@ snapshots:
       '@rolldown/pluginutils': 1.0.1
       vite: 8.3.4(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)
 
+  '@wasm-fmt/gofmt@0.7.3': {}
+
   acorn@8.19.0: {}
 
   antd@6.6.5(date-fns@3.6.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
@@ -4498,6 +4513,8 @@ snapshots:
       string-convert: 0.2.1
 
   json5@2.2.3: {}
+
+  json_typegen_wasm@0.7.0: {}
 
   jsonc-parser@3.3.1: {}
 

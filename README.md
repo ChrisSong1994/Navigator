@@ -14,7 +14,7 @@
 - Bing 壁纸：关闭、从最近 8 天中选取、按间隔自动轮播、自定义图片地址；配置里只持久化一个图片直链
 - Chrome 书签双向同步：手动从书签栏 /「导航精灵」拉取，或把当前配置推送 / 覆盖到书签栏下的「导航精灵」文件夹
 - 数据导入导出：标准配置 JSON，以及 Chrome 书签 HTML
-- 工具箱：顶栏入口弹出工具抽屉，选中后整页打开该工具，左上角返回箭头回首页；目前有颜色工具（取色面板、HEX / RGB / CMYK / HSV / HSL 互转、颜色记录）、JSON 工具（格式化 / 压缩 / 校验并给出行列与出错片段 / 修复 / JSON5 兼容解析 / 转义与去转义 / 上传下载）、Markdown 工具（编辑 + 预览、GFM、公式、图表、代码高亮、导入导出 .md）和 AST 工具（JS / TS、JSON、YAML 三种语言转 AST，树与 JSON 两种视图，悬停联动源码高亮），工具界面按需懒加载
+- 工具箱：顶栏入口弹出工具抽屉，选中后整页打开该工具，左上角返回箭头回首页；目前有颜色工具（取色面板、HEX / RGB / CMYK / HSV / HSL 互转、颜色记录）、JSON 工具（格式化 / 压缩 / 校验并给出行列与出错片段 / 修复 / JSON5 兼容解析 / 转义与去转义 / 上传下载）、Markdown 工具（编辑 + 预览、GFM、公式、图表、代码高亮、导入导出 .md）、AST 工具（JS / TS、JSON、YAML 三种语言转 AST，树与 JSON 两种视图，悬停联动源码高亮）和 Transform 工具（JSON / YAML / JavaScript 对象互转 TypeScript、Go、Java、Kotlin、MySQL、JSON Schema），工具界面按需懒加载
 
 ## 数据流
 
@@ -124,7 +124,7 @@ chrome_bookmarks_demo.html ──pnpm import:bookmarks──▶ global_original.
 
 体积：JSON 工具那份 chunk 约 5.2 MB（gzip 约 1.5 MB），ELK 布局单独打成 `elk.bundled-*.js`（约 1.4 MB），monaco 的两个 worker 各占一份（`editor.worker` 约 260 KB、`json.worker` 约 390 KB）。这些都只在打开工具时请求，新标签页首屏不为它们付出字节。
 
-扩展里的一个坑：ELK 必须跑在主线程上。reaflow 默认给 ELK 传一个 base64 `data:` URL 的 Worker，而扩展页面的 CSP 是 `script-src 'self'`（`worker-src` 未设置时回落到它），data: / blob: 都不在其中 —— worker 直接被拦掉，布局永远不返回、画布空着，而且 manifest 里补 `worker-src` 也没用（Chrome 的扩展默认 CSP 只放行 `'self' 'wasm-unsafe-eval' 'inline-speculation-rules'` 和本机地址）。`vite.config.ts` 因此把 `elkjs/lib/elk-api` 别名到 `src/tools/Json/GraphView/lib/elkMainThread.ts`，丢掉 `workerFactory` 走 `elk.bundled` 的进程内实现。
+扩展里的一个坑：ELK 必须跑在主线程上。reaflow 默认给 ELK 传一个 base64 `data:` URL 的 Worker，而扩展页面的 CSP 是 `script-src 'self'`（`worker-src` 未设置时回落到它），data: / blob: 都不在其中 —— worker 直接被拦掉，布局永远不返回、画布空着，而且 manifest 里补 `worker-src` 也没用（`worker-src` 的回落链只到 `script-src`，想放行得改 `script-src` 本身，而那是拿一条 CSP 换一个可以 `data:` 起线程的口子，不划算）。`vite.config.ts` 因此把 `elkjs/lib/elk-api` 别名到 `src/tools/Json/GraphView/lib/elkMainThread.ts`，丢掉 `workerFactory` 走 `elk.bundled` 的进程内实现。
 
 ### Markdown 工具
 
@@ -178,6 +178,53 @@ chrome_bookmarks_demo.html ──pnpm import:bookmarks──▶ global_original.
 - **切解析器的中间那一拍会拿错实例**。上游把「当前 parser」和「解析库实例」分开存，切解析器时 parser 先变、实例后到，而 `[code, parser]` 那个 effect 立刻就调 `parseCode()`，于是变成拿新 parser 的方法去调旧 parser 的实例 —— 从 acorn 切回 babel 时会跑 `babel.parse(acorn)`，acorn 收下 babel 那份没有 `ecmaVersion` 的 options，控制台冒一句警告，树还会先用错的那份结果闪一下。这里把两者绑成一个 `{ parser, instance }`，对不上就不可能发生
 
 体积：AST 工具那份 chunk 约 127 KB（gzip 约 40 KB），Babel 解析器单独一份 `lib-*.js` 约 285 KB（gzip 约 72 KB），`acorn-*.js` 约 118 KB（gzip 约 35 KB），yaml 约 4 KB，样式一份 `AstExplorer-*.css` 约 3 KB。monaco 的 `editor.worker` / `json.worker` 跟 JSON 工具是同一份产物（导入写法相同，打包后同名），没有多出一份。全部都只在打开 AST 工具时才请求。
+
+### Transform 工具
+
+从 `developer-assistant` 的 `src/renderer/pages/Transform` 搬过来：左边填一段 JSON / YAML / JavaScript 对象，右边出转换结果，十个转换器：
+
+| 输入 | 输出 |
+| --- | --- |
+| JSON | YAML、TypeScript（typealias）、Go struct（go 官方排版）、Java、Kotlin、MySQL 建表、JSON Schema |
+| JavaScript 对象 | JSON、TypeScript |
+| YAML | JSON |
+
+- 左编辑右结果，两边都是 monaco，输入用源语言高亮、输出用目标语言高亮。JSON 那份语法定义在公共的 `components/Editor/monaco.ts` 里（JSON 工具已经在用），其余七种（YAML / Go / Java / Kotlin / TypeScript / JavaScript / MySQL）在工具自己的 `components/Editor/languages.ts` 里引 —— 分开是为了不让 JSON 工具白付这七份的字节
+- 输入改动防抖 300 ms 后再转；每个转换器各自记住自己那份输入（来回切换不清空）。两个走 WASM 的转换器第一次选中时才下载（`json_typegen_wasm_bg` 约 1.04 MB、`gofmt` 约 272 KB）
+- 转换失败就清空输出、在输出那块上压一行中文错误（绝对定位，不挤布局 —— 一挤就会让 `useFillHeight` 量到的高度过期）
+- 工具栏：复制、历史记录、弹出到独立窗口 / 同步到主窗口、清除。历史最多 20 条存在 localStorage（内容超过 256 KB 只留名字和时间），**记的是输入而不是输出**（输出是输入的纯函数），点一条连转换器带输入一起回到当时那一屏；换过的转换器不同、内容相同的两份输入都留着
+- 弹出到独立窗口：`window.open` 开 `/?tool=transform&popup=1`，两个窗口用 BroadcastChannel 双向同步（这条通道顺带捎上当前是哪个转换器 —— 这个工具没有「文件名」可带）
+
+WASM 与扩展 CSP：WASM 编译在扩展页面里**不在**默认放行范围内。MV3 的默认 `extension_pages` CSP 是 `script-src 'self'; object-src 'self'`，上面没有 `'wasm-unsafe-eval'`，所以 `instantiateStreaming` 会被拦下并抛：
+
+```
+CompileError: WebAssembly.instantiateStreaming(): ... violates the following Content Security policy directive:
+"script-src 'self'" ... neither 'wasm-eval' nor 'unsafe-eval' is an allowed source of script
+```
+
+`public/manifest.json` 因此显式写了一条 `"content_security_policy": {"extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"}`。只放行 WASM 编译，JS 的 `eval` / `new Function` 仍然被拦（所以仓库「不用 eval」那条规矩没被绕开），开发态（localhost，没有 CSP）本来就不受影响。
+
+排版那半句：`json_typegen_wasm` 从 JSON 推导结构时 **不抛异常**，解析不了就返回一句英文原文（`Unable to parse JSON sample` / `Local samples disabled`）。上游那个 `try/catch` 因此是死代码，用户直接在右边看到这句英文；这里把两句认出来翻成中文再抛（`lib/converters.ts` 的 `TYPEGEN_SENTINELS`，`pnpm check:tools` 里有断言盯着）。
+
+搬的时候顺手修掉的上游问题：
+
+- **`eval` 换成 `json5`**。两个 JS Object 转换器用 `eval('(' + 内容 + ')')` 解析，仓库明令不许，MV3 的 CSP 本来也拦。`json5` 已经在依赖里，那两段示例它给的结果与 `eval` 一致（单引号、无引号键、尾逗号都认）
+- **十个转换器里有七个完全没有 `try/catch`**，而外面 `useEffect(() => handleTransform(value))` 也不接 `.catch` —— 粘一段半截 JSON 就是一条未处理的 Promise rejection。现在统一成「输出清空 + 一行中文错误」，并且 `JSON.parse` / `YAML.parse` / `JSON5.parse` 那三处会漏出来的英文原文也包成了中文（`lib/parse.ts`），不会中英混排
+- **「JavaScript Object 转 JSON」的输出语言写成了 Go**，可它输出的是 `JSON.stringify` 的结果，右边那块编辑器的语法着色一直是错的
+- **`jsonToGoStruct` 遇到数组或标量根直接崩**。上游把推导结果硬当 struct 用，`[1,2,3]` 这种完全合法的 JSON 会在 `generateGoCode` 里读 `.fields` 时 TypeError。现在给一句说得清的错误
+- **抄过来的 `generate-schema` 遇到 `null` 字段就崩**（`isTimestamp` 对 `type: 'null'` 也会被调），而且查不到映射的类型列出来是 `undefined`（像 `id undefined`）。现在分别是「不崩」和退化成 `TEXT`
+- **JSON→YAML 那条路重复解析**：上游先用 `jsonlint-mod` 判一次能不能解析、再 `JSON.parse` 解一次，合并成一次
+- 文案与 API：`语言` → `转换`、`Typescript` → `TypeScript`、`Javascript` → `JavaScript`；`component` 不应传给 antd 的 `Select`
+
+上游这几处留着没动（不是 bug，是设计取舍，改了就是另一个工具）：
+
+- 数组和标量的合并规则里那张优先级表是反的，`[1, "x"]` 推出来是 `[]string` 而不是 `[]interface{}`
+- `snakeCaseFields: true` 出来是 `Is_student` 这种半截蛇形（单词首字母还是大写）
+- 嵌套结构会生成两遍：字段上内联一份，另起一个单独的 `AddressStruct`
+- `usePointersForOptionalFields` 是个空开关，上游从来没往生成器里传过它
+- `JsonToJava` 是按行字符串重写（`substring(11, indexOf('('))` 这种硬编码下标），库本身没有 Java 模式。这里原样留着，但用 `pnpm check:tools` 把它们逐字钉住了，换行一漂就会红
+
+体积：Transform 工具那份 chunk 约 16 KB（gzip 约 5 KB），样式一份 `Transform-*.css` 约 2.5 KB。两个 WASM 与它们的胶水代码只在选中对应转换器时才请求。
 
 ## 构建为 Chrome 扩展
 
@@ -262,7 +309,8 @@ pnpm release patch --dry-run # 只预览计划，不修改文件和推送
 ```bash
 pnpm dev              # 本地开发
 pnpm refresh          # 校验并刷新 src/global_runtime.json
-pnpm check            # lint + 合并规则测试 + 配置校验
+pnpm check            # lint + 各个 check:* 回归脚本（合并规则 / 存储 / 壁纸 / 工具逻辑）+ 配置校验
+pnpm check:tools      # 只跑工具逻辑那份（颜色换算、JSON、AST、Transform 的纯函数与转换器表）
 pnpm build            # 网页构建
 pnpm build:extension  # Chrome 新标签页扩展构建（产物在 dist-extension/）
 ```

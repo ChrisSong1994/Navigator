@@ -3,6 +3,7 @@ import {
   CodeOutlined,
   FileMarkdownOutlined,
   PartitionOutlined,
+  SwapOutlined,
 } from '@ant-design/icons'
 import { lazy } from 'react'
 import type { ComponentType, ReactNode } from 'react'
@@ -51,6 +52,13 @@ export const TOOLS: ToolEntry[] = [
     description: '源码转 AST / 树与 JSON 两种视图 / 悬停联动源码高亮',
     icon: <PartitionOutlined />,
     content: lazy(() => import('./AstExplorer/index.tsx')),
+  },
+  {
+    key: 'transform',
+    title: 'Transform',
+    description: 'JSON / YAML / JS Object 互转：TypeScript、Go、Java、Kotlin、MySQL、JSON Schema',
+    icon: <SwapOutlined />,
+    content: lazy(() => import('./Transform/index.tsx')),
   },
 ]
 

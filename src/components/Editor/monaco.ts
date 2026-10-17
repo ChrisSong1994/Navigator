@@ -1,5 +1,5 @@
 /**
- * monaco 的装配。
+ * monaco 的装配。JSON 工具与 Transform 工具共用（本文件从 src/tools/Json/components/Editor/monaco.ts 原样搬来）。
  *
  * 两件事必须在这里做完，否则在扩展里直接是坏的：
  *
@@ -8,7 +8,11 @@
  * 2. monaco 自己也要 worker（词法分析、JSON 校验）。Vite 的 `?worker` 导入会把它切成独立产物，
  *    扩展态 worker-src 'self' 下能加载。
  *
- * 只引 editor.api + json 语言，不引 monaco-editor 的包入口 —— 那个入口会把 80 多种语言全拖进来。
+ * 这里只引 editor.api + json 语言（两个工具都要的基础），不引 monaco-editor 的包入口 —— 那个入口会把
+ * 80 多种语言全拖进来。各工具额外要的语言在自己的 languages.ts 里注册：那个模块进哪个 chunk，
+ * 语言就只让谁付这份字节。
+ *
+ * 模块级副作用（loader.config 与 MonacoEnvironment 各只能设一次），所以必须共用这一份，不能各写各的。
  */
 import { loader } from '@monaco-editor/react'
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api'

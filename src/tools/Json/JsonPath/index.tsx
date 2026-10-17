@@ -4,7 +4,7 @@ import { JSONPathJS } from 'jsonpath-js'
 import { memo, useMemo, useState } from 'react'
 
 import BaseEditor from '../components/Editor/BaseEditor.tsx'
-import { EEditorLanguage } from '../components/Editor/index.ts'
+import { EEditorLanguage } from '../../../components/Editor/index.ts'
 import CheatSheet from './CheatSheet.tsx'
 
 /** 结果面板是只读输出，给它一个固定的高（外层再按可用高度约束） */

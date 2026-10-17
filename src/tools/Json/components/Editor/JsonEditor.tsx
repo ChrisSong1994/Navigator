@@ -5,8 +5,8 @@ import { memo } from 'react'
 import { pickTextFile } from '../../../../lib/file.ts'
 import { JSON_FILE_KIND } from '../../lib/kind.ts'
 import { isEmpty } from '../../../../lib/util.ts'
+import { EEditorLanguage } from '../../../../components/Editor/index.ts'
 import BaseEditor from './BaseEditor.tsx'
-import { EEditorLanguage } from './index.ts'
 
 interface IProps {
   value: string

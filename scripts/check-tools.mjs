@@ -5,6 +5,7 @@
  * 工具箱里各工具纯逻辑的冒烟测试（不需要浏览器）：node scripts/check-tools.mjs
  * JSON 那边覆盖的是「写错一步用户就会看到错东西」的地方：JSON5 兜底、错误行列、转义往返。
  * 颜色那边覆盖的是换算本身（hex / rgb / hsv / hsl / cmyk 往返）与输入框的解析判定。
+ * Transform 那边覆盖的是三个能脱离 WASM 单独测的纯函数（JSON→Go、JSON→MySQL、Kotlin→Java）与转换器表本身。
  */
 import assert from 'node:assert/strict'
 import {
@@ -50,6 +51,20 @@ import { babel } from '../src/tools/AstExplorer/parsers/js/babel.ts'
 import { describeJsonError, jsoncParser, normalizeJsonNode } from '../src/tools/AstExplorer/parsers/json/jsonc.ts'
 import { yamlNodeName, yamlNodeRange } from '../src/tools/AstExplorer/parsers/yaml/node.ts'
 import { yamlParser } from '../src/tools/AstExplorer/parsers/yaml/yaml.ts'
+import JSON5 from 'json5'
+import YAML from 'yaml'
+import { EEditorLanguage } from '../src/components/Editor/index.ts'
+import { jsonToGoStruct } from '../src/tools/Transform/lib/jsonToGoStruct.ts'
+import { jsonToMysql } from '../src/tools/Transform/lib/jsonToMysql.ts'
+import { kotlinToJava } from '../src/tools/Transform/lib/kotlinToJava.ts'
+import {
+  CONVERTERS,
+  DEFAULT_CONVERTER_KEY,
+  findConverter,
+  readTypegenResult,
+} from '../src/tools/Transform/lib/converters.ts'
+import { SAMPLE_JSON, SAMPLE_YAML, SAMPLE_JS_OBJECT } from '../src/tools/Transform/lib/sample.ts'
+import { parseJsObject, parseJson, parseYaml } from '../src/tools/Transform/lib/parse.ts'
 
 let passed = 0
 const test = (name, fn) => {
@@ -719,6 +734,282 @@ test('文件类型：accept 里得含扩展名，mime / 描述不缺（选文件
   assert.equal(MARKDOWN_FILE_KIND.extension, '.md')
   assert.equal(JSON_FILE_KIND.extension, '.json')
 })
+
+// --- Transform：JSON / YAML / JS Object 互转 ---------------------------------
+
+/** 上游 JsonToJava 是「先让 json_typegen 出 Kotlin，再按行重写成 Java」，这段是它真实的 Kotlin 输出 */
+const KOTLIN_SAMPLE = `data class Root(
+    val name: String,
+    val age: Long,
+    val isStudent: Boolean,
+    val hobbies: List<String>,
+    val address: Address,
+)
+
+data class Address(
+    val city: String,
+    val country: String,
+)
+`
+
+/**
+ * 能直接在 node 里跑的转换器。另外四个走 WASM，而那两个库是给打包器用的（没有 exports / main 字段），
+ * 在 node 里 import 本身就失败 —— 拿它们做断言只会「因为别的原因抛错」而恒过，等于没测。
+ * WASM 那四个交给浏览器那两套 CDP 用例。
+ */
+const NODE_SAFE_CONVERTERS = ['jsonToYaml', 'jsonToGo', 'jsonToMysql', 'jsObjectToJson', 'yamlToJson']
+
+test('JSON 转 Go Struct：示例的逐字输出（含嵌套结构与字段名）', () => {
+  assert.equal(
+    jsonToGoStruct(SAMPLE_JSON),
+    [
+      'type Root struct {',
+      '  Name string `json:"name"`',
+      '  Age int `json:"age"`',
+      '  Is_student bool `json:"isStudent"`',
+      '  Hobbies []string `json:"hobbies"`',
+      '  Address struct {',
+      '  City string',
+      '  Country string',
+      '} `json:"address"`',
+      '}',
+      '',
+      'type AddressStruct struct {',
+      '  City string `json:"city"`',
+      '  Country string `json:"country"`',
+      '}',
+    ].join('\n'),
+  )
+
+  // 类型推导：null → interface{}、整数 → int、小数 → float64、混合数组 → 合并后的元素类型
+  assert.equal(
+    jsonToGoStruct('{"a":null,"b":1.5,"c":[1,"x"]}'),
+    [
+      'type Root struct {',
+      '  A interface{} `json:"a"`',
+      '  B float64 `json:"b"`',
+      '  C []string `json:"c"`',
+      '}',
+    ].join('\n'),
+  )
+
+  assert.equal(jsonToGoStruct('{}'), 'type Root struct {\n}')
+})
+
+test('JSON 转 Go Struct：根节点不是对象时给错误，而不是上游那样 TypeError 崩掉', () => {
+  // 上游把推导结果硬当 StructType 用，这两种合法 JSON 会去读 undefined.fields
+  assert.throws(() => jsonToGoStruct('[{ "a": 1 }]'), /根节点不是对象/)
+  assert.throws(() => jsonToGoStruct('5'), /根节点不是对象/)
+})
+
+test('JSON 转 MySQL：与 generate-schema 的输出逐字一致（含子表与主外键）', () => {
+  assert.equal(
+    jsonToMysql(JSON.parse(SAMPLE_JSON)),
+    [
+      'CREATE TABLE generic (',
+      '  id TEXT,',
+      '  name TEXT,',
+      '  age INT,',
+      '  isStudent BOOLEAN,',
+      '  PRIMARY KEY (id)',
+      ');',
+      '',
+      'CREATE TABLE generic_hobbies (',
+      '  generic_id TEXT,',
+      '  id TEXT,',
+      '  value TEXT,',
+      '  PRIMARY KEY (id),',
+      '  FOREIGN KEY (generic_id) REFERENCES generic(id)',
+      ');',
+      '',
+      'CREATE TABLE generic_address (',
+      '  generic_id TEXT,',
+      '  id TEXT,',
+      '  city TEXT,',
+      '  country TEXT,',
+      '  PRIMARY KEY (id),',
+      '  FOREIGN KEY (generic_id) REFERENCES generic(id)',
+      ');',
+    ].join('\n'),
+  )
+})
+
+test('JSON 转 MySQL：null 字段不能再把整个转换炸掉，查不到映射的类型退化成 TEXT', () => {
+  // generate-schema 的 isTimestamp(null) 会读 null.length 直接抛：整份 JSON 里只要有一个 null 就转不出来
+  assert.equal(
+    jsonToMysql(JSON.parse('{"a":null,"b":2}')),
+    ['CREATE TABLE generic (', '  id TEXT,', '  a TEXT,', '  b INT,', '  PRIMARY KEY (id)', ');'].join(
+      '\n',
+    ),
+  )
+
+  // type-of-is 对 Map 给出 'map'，映射表里没有，上游会把 undefined 拼进 SQL（`  m undefined,`）
+  assert.match(jsonToMysql({ m: new Map([['k', 1]]) }), /^ {2}m TEXT,$/m)
+})
+
+test('Kotlin 转 Java：字段 / 构造函数 / 读写器与泛型都对上', () => {
+  const java = kotlinToJava(KOTLIN_SAMPLE)
+
+  assert.equal((java.match(/^public class /gm) ?? []).length, 2)
+  assert.ok(java.includes('public class Root {'))
+  assert.ok(java.includes('\tprivate String name;'))
+  assert.ok(java.includes('\tprivate List<String> hobbies;'))
+  // 构造函数把字段按顺序收全
+  assert.ok(
+    java.includes(
+      '\tpublic Root(String name, Long age, Boolean isStudent, List<String> hobbies, Address address) {',
+    ),
+  )
+  assert.ok(java.includes('\t\tthis.address = address;'))
+  assert.ok(java.includes('\tpublic String getName() {'))
+  assert.ok(java.includes('\tpublic void setAddress(Address address) {'))
+  assert.ok(java.includes('public class Address {'))
+  // 重写完不该再有 Kotlin 的痕迹
+  assert.ok(!java.includes('data class'))
+  assert.ok(!java.includes('val '))
+})
+
+test('Kotlin 转 Java：单个类 / typealias / import 的逐字输出（硬编码下标那块别再漂）', () => {
+  assert.equal(
+    kotlinToJava('data class A(\n    val x: String,\n)\n'),
+    [
+      'public class A {',
+      '\tprivate String x;',
+      '',
+      '\tpublic A(String x) {',
+      '\t\tthis.x = x;',
+      '\t}',
+      '',
+      '\tpublic String getX() {',
+      '\t\treturn this.x;',
+      '\t}',
+      '',
+      '\tpublic void setX(String x) {',
+      '\t\tthis.x = x;',
+      '\t}',
+      '}',
+      '',
+      '',
+    ].join('\n'),
+  )
+
+  assert.equal(
+    kotlinToJava('typealias Root = List<Long>;\n'),
+    [
+      'public class Root {',
+      '\tprivate List<Long> root;',
+      '',
+      '\tpublic Root(List<Long> root) {',
+      '\t\tthis.root = root;',
+      '\t}',
+      '',
+      '\tpublic List<Long> getRoot() {',
+      '\t\treturn this.root;',
+      '\t}',
+      '',
+      '\tpublic void setRoot(List<Long> root) {',
+      '\t\tthis.root = root;',
+      '\t}',
+      '',
+      '}',
+      '',
+      '',
+    ].join('\n'),
+  )
+
+  // Kotlin 的 <Any>? 与 import 结尾的分号
+  const withImport = kotlinToJava(
+    'import kotlin.collections.List\ndata class A(\n    val xs: List<Any>?,\n)\n',
+  )
+  assert.ok(withImport.startsWith('import kotlin.collections.List;\n'))
+  assert.ok(withImport.includes('\tprivate List<?> xs;'))
+})
+
+test('json_typegen 的失败是两句英文原文而不是异常，得翻成错误', () => {
+  assert.equal(readTypegenResult('export type Root = {};\n'), 'export type Root = {};\n')
+  assert.throws(() => readTypegenResult('Unable to parse JSON sample'), /JSON 解析失败/)
+  assert.throws(() => readTypegenResult('Local samples disabled'), /推导不出结构/)
+})
+
+test('转换器表：10 个都在、key 不重、实现与示例齐全、默认那个选得出来', () => {
+  assert.equal(CONVERTERS.length, 10)
+  assert.equal(new Set(CONVERTERS.map((item) => item.key)).size, 10)
+  assert.equal(DEFAULT_CONVERTER_KEY, 'jsonToYaml')
+  assert.ok(findConverter(DEFAULT_CONVERTER_KEY))
+
+  for (const converter of CONVERTERS) {
+    assert.ok(converter.label, `${converter.key} 缺 label`)
+    assert.equal(typeof converter.run, 'function', `${converter.key} 缺 run`)
+    assert.ok(converter.sample, `${converter.key} 缺 sample`)
+    assert.ok(converter.sourceLang, `${converter.key} 缺 sourceLang`)
+    assert.ok(converter.targetLang, `${converter.key} 缺 targetLang`)
+  }
+
+  // 上游把「JavaScript Object 转 JSON」的输出语言写成了 GO，右边那块编辑器的着色因此一直是错的
+  assert.equal(findConverter('jsObjectToJson').targetLang, EEditorLanguage.JSON)
+  assert.equal(findConverter('jsObjectToJson').sourceLang, EEditorLanguage.JAVASCRIPT)
+  // 输出是 JSON 的就得选 JSON，别再有第二处写歪
+  assert.equal(findConverter('yamlToJson').targetLang, EEditorLanguage.JSON)
+  assert.equal(findConverter('jsonToJsonSchema').targetLang, EEditorLanguage.JSON)
+})
+
+test('JS Object 两个转换器：上游的 eval 例子用 json5 也能解（单引号 / 无引号键 / 尾逗号）', () => {
+  assert.deepEqual(JSON5.parse(SAMPLE_JS_OBJECT), {
+    title: { type: 'String', trim: true, index: true, required: true },
+    year: { type: 'Number', max: 2012, validate: 'validateBookYear' },
+    author: { type: 'ObjectId', ref: 'Author', index: true, required: true },
+  })
+
+  // eval 能解、JSON.parse 不能解的写法
+  assert.deepEqual(JSON5.parse("{ a: 1, b: 'x', c: [1, 2,], }"), { a: 1, b: 'x', c: [1, 2] })
+})
+
+test('YAML 往返：字符串 / 数字 / 布尔 / 数组 / 嵌套对象都不变形', () => {
+  const value = JSON.parse(SAMPLE_JSON)
+  assert.deepEqual(YAML.parse(YAML.stringify(value)), value)
+  assert.deepEqual(JSON.parse(JSON.stringify(YAML.parse(SAMPLE_YAML), null, 2)), value)
+})
+
+test('解析器报错：三个都包成中文开头，YAML 那句只留第一行', () => {
+  assert.throws(() => parseJson('{"a":}'), /^Error: JSON 解析失败：/)
+  assert.throws(() => parseJson('{"a":'), /^Error: JSON 解析失败：/)
+  // 英文原文里的细节要留着，不然用户不知道错在哪
+  assert.throws(() => parseJson('{"a":}'), /Unexpected token/)
+
+  // YAML 的报错是多行，后面几行是出错位置的源码快照，铺到那行提示上会撑成好几行
+  const yamlError = (() => {
+    try {
+      parseYaml('a: [1,')
+    } catch (error) {
+      return error
+    }
+    return null
+  })()
+  assert.ok(yamlError, 'YAML 解析失败没有抛错')
+  assert.match(yamlError.message, /^YAML 解析失败：/)
+  assert.ok(!yamlError.message.includes('\n'), `YAML 的报错里还有换行：${yamlError.message}`)
+  assert.ok(yamlError.cause, '原始错误应该挂在 cause 上')
+
+  assert.throws(() => parseJsObject("title: { type: 'String'"), /^Error: JavaScript 对象解析失败：/)
+
+  // JSON→Go 那条路也要是中文，别漏出 V8 的英文原文
+  assert.throws(() => jsonToGoStruct('{"a":'), /^Error: JSON 解析失败：/)
+})
+
+for (const key of NODE_SAFE_CONVERTERS) {
+  testAsync(`非法输入要抛错：${key}`, async () => {
+    await assert.rejects(
+      () => findConverter(key).run('{ 这不是 JSON 也不是 YAML'),
+      (error) => {
+        assert.ok(error instanceof Error, '抛的得是 Error')
+        assert.ok(error.message, '错误信息不能为空')
+        // 那行提示是要给人看的，不能漏出 V8 / js-yaml / JSON5 的英文原文
+        assert.match(error.message, /[一-龥]/, `${key} 的错误信息里没有中文：${error.message}`)
+        return true
+      },
+    )
+  })
+}
 
 // AST 那边几个用例要等 loadParser 的动态 import
 await Promise.all(pending)

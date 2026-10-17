@@ -8,9 +8,9 @@ import { useConfig } from '../../../../config/configContext.ts'
 import { pickTextFile, readDroppedFile } from '../../../../lib/file.ts'
 import { JSON_FILE_KIND } from '../../lib/kind.ts'
 import { debounce, isEmpty } from '../../../../lib/util.ts'
-import { DEFAULT_OPTIONS, EEditorLanguage } from './index.ts'
+import { DEFAULT_OPTIONS, EEditorLanguage } from '../../../../components/Editor/index.ts'
 // 副作用导入：装上 monaco 实例和 worker，必须在 MonacoEditor 挂载前跑完
-import './monaco.ts'
+import '../../../../components/Editor/monaco.ts'
 
 export interface IBaseEditorProps {
   language?: EEditorLanguage

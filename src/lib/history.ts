@@ -21,28 +21,61 @@ export interface HistoryItem {
   content: string
   time: number
   contentOmitted?: boolean
+  /**
+   * 程序用的标识，去重键取 `meta ?? name`。
+   *
+   * name 是给人看的、meta 是给程序看的：JSON 与 Markdown 记的是文件，name 就是文件名，两者合一；
+   * Transform 的输入没有文件名，name 是「JSON 转 YAML」这种转换器名（重复出现很正常），
+   * 得另有一个 meta 记转换器 key，点历史时才知道该切回哪个转换器。
+   */
+  meta?: string
 }
 
 function bytesOf(text: string): number {
   return new Blob([text]).size
 }
 
-/** 新记录插最前，同名替换（原项目是按文件路径去重），超出上限截断 */
+/**
+ * 不去重的写入：一条就是一条。
+ *
+ * Transform 的每次转换都是独立记录 —— 同一个转换器粘十份不同的 JSON 该留十条，
+ * 不该像「同一个文件存两次」那样只剩最后一条。
+ */
+export function prependHistoryEntry(
+  items: HistoryItem[],
+  name: string,
+  content: string,
+  now = Date.now(),
+  meta?: string,
+): HistoryItem[] {
+  const item: HistoryItem = {
+    id: `${now}-${meta ?? name}`,
+    name,
+    content: bytesOf(content) > MAX_CONTENT_BYTES ? '' : content,
+    time: now,
+  }
+  if (meta) item.meta = meta
+  if (!item.content) item.contentOmitted = true
+
+  return [item, ...items].slice(0, LIMIT)
+}
+
+/** 新记录插最前，同名替换（原项目是按文件路径去重），超出上限截断。去重键是 `meta ?? name` */
 export function addHistoryEntry(
   items: HistoryItem[],
   name: string,
   content: string,
   now = Date.now(),
+  meta?: string,
 ): HistoryItem[] {
-  const item: HistoryItem = {
-    id: `${now}-${name}`,
+  const key = meta ?? name
+  return prependHistoryEntry(
+    items.filter((entry) => (entry.meta ?? entry.name) !== key),
     name,
-    content: bytesOf(content) > MAX_CONTENT_BYTES ? '' : content,
-    time: now,
-  }
-  if (!item.content) item.contentOmitted = true
-
-  return [item, ...items.filter((entry) => entry.name !== name)].slice(0, LIMIT)
+    content,
+    now,
+    meta,
+  )
 }
 
 export function removeHistoryEntry(items: HistoryItem[], id: string): HistoryItem[] {
@@ -52,7 +85,15 @@ export function removeHistoryEntry(items: HistoryItem[], id: string): HistoryIte
 export interface HistoryStore {
   read: () => HistoryItem[]
   write: (items: HistoryItem[]) => void
-  add: (items: HistoryItem[], name: string, content: string, now?: number) => HistoryItem[]
+  add: (items: HistoryItem[], name: string, content: string, now?: number, meta?: string) => HistoryItem[]
+  /** 不去重的版本，语义见 prependHistoryEntry */
+  prepend: (
+    items: HistoryItem[],
+    name: string,
+    content: string,
+    now?: number,
+    meta?: string,
+  ) => HistoryItem[]
   remove: (items: HistoryItem[], id: string) => HistoryItem[]
 }
 
@@ -97,5 +138,5 @@ export function createHistoryStore(storageKey: string): HistoryStore {
     }
   }
 
-  return { read, write, add: addHistoryEntry, remove: removeHistoryEntry }
+  return { read, write, add: addHistoryEntry, prepend: prependHistoryEntry, remove: removeHistoryEntry }
 }
