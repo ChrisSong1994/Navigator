@@ -13,7 +13,7 @@ import markdownLight from 'github-markdown-css/github-markdown-light.css?url'
 import hljsDark from 'highlight.js/styles/vs2015.css?url'
 import hljsLight from 'highlight.js/styles/vs.css?url'
 
-import type { ColorScheme } from '../../hooks/useColorScheme.ts'
+import type { ColorScheme } from '../../../hooks/useColorScheme.ts'
 
 /** 每套两张：第一张管 .markdown-body 的排版，第二张管 .hljs 的代码高亮 */
 export const THEME_STYLESHEETS: Record<ColorScheme, [string, string]> = {

@@ -22,7 +22,7 @@ import { subscribe } from './components/visualization/utils/pubsub.ts'
 import { categories, findCategory } from './parsers/index.ts'
 import type { Category, Parser } from './parsers/types.ts'
 import { safeStringify } from './lib/safeStringify.ts'
-import { useFillHeight } from '../hooks/useFillHeight.ts'
+import { useFillHeight } from '../../hooks/useFillHeight.ts'
 import './AstExplorer.css'
 
 /** 面板里的东西都填满所在栏 */

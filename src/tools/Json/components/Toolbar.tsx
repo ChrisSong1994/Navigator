@@ -15,9 +15,9 @@ import {
 import { Button, Empty, Popover, Tooltip } from 'antd'
 import type { ReactNode } from 'react'
 
-import Copy from '../../components/Copy.tsx'
-import type { HistoryItem } from '../../lib/history.ts'
-import { formatTime } from '../../lib/util.ts'
+import Copy from '../../../components/Copy.tsx'
+import type { HistoryItem } from '../../../lib/history.ts'
+import { formatTime } from '../../../lib/util.ts'
 
 /**
  * 编辑器上方那排图标按钮，顺序与原项目一致：

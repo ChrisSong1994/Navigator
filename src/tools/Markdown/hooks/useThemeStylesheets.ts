@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 
-import type { ColorScheme } from '../../hooks/useColorScheme.ts'
+import type { ColorScheme } from '../../../hooks/useColorScheme.ts'
 import { THEME_STYLESHEETS } from '../lib/theme.ts'
 
 /** 挂出去的那两张 <link> 靠这个属性认领，免得把别人的样式表一起删了 */

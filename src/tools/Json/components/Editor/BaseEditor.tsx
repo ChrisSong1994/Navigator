@@ -5,9 +5,9 @@ import { memo, useEffect, useMemo, useState } from 'react'
 
 import { useResolvedTheme } from '../../../../hooks/useResolvedTheme.ts'
 import { useConfig } from '../../../../config/configContext.ts'
-import { pickTextFile, readDroppedFile } from '../../../lib/file.ts'
+import { pickTextFile, readDroppedFile } from '../../../../lib/file.ts'
 import { JSON_FILE_KIND } from '../../lib/kind.ts'
-import { debounce, isEmpty } from '../../../lib/util.ts'
+import { debounce, isEmpty } from '../../../../lib/util.ts'
 import { DEFAULT_OPTIONS, EEditorLanguage } from './index.ts'
 // 副作用导入：装上 monaco 实例和 worker，必须在 MonacoEditor 挂载前跑完
 import './monaco.ts'

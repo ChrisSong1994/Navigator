@@ -2,9 +2,9 @@ import { CloseOutlined } from '@ant-design/icons'
 import { Button, Tooltip } from 'antd'
 import { memo } from 'react'
 
-import { pickTextFile } from '../../../lib/file.ts'
+import { pickTextFile } from '../../../../lib/file.ts'
 import { JSON_FILE_KIND } from '../../lib/kind.ts'
-import { isEmpty } from '../../../lib/util.ts'
+import { isEmpty } from '../../../../lib/util.ts'
 import BaseEditor from './BaseEditor.tsx'
 import { EEditorLanguage } from './index.ts'
 

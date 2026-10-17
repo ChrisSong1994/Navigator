@@ -15,8 +15,8 @@ import {
   repairJsonText,
   unescapeJsonText,
 } from '../src/tools/Json/lib/json.ts'
-import { addHistoryEntry, removeHistoryEntry } from '../src/tools/lib/history.ts'
-import { formatTime, isEmpty } from '../src/tools/lib/util.ts'
+import { addHistoryEntry, removeHistoryEntry } from '../src/lib/history.ts'
+import { formatTime, isEmpty } from '../src/lib/util.ts'
 import { JSON_FILE_KIND } from '../src/tools/Json/lib/kind.ts'
 import { MARKDOWN_FILE_KIND } from '../src/tools/Markdown/lib/kind.ts'
 import {

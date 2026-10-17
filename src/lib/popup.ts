@@ -10,7 +10,7 @@
  * 一个弹窗窗口（固定窗口名，重复点击聚焦而不是再开一个），内容靠 BroadcastChannel 双向同步。
  */
 // 两个模块共用同一个 ?tool= 约定；工具页本身与具体工具无关，换工具只是换个查询串
-import { TOOL_QUERY } from '../query.ts'
+import { TOOL_QUERY } from '../tools/query.ts'
 
 /** 弹窗自己靠这个查询参数知道「我是那个弹出来的窗口」 */
 export const POPUP_QUERY = 'popup'
