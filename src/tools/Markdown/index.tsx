@@ -9,7 +9,7 @@
  * 5、历史记录（存内容，两个模式共用同一份，点一下回填；原项目没有）
  * 6、弹出到独立窗口 + 双向同步（原项目没有）
  * 7、亮 / 暗两套主题（原项目固定亮色）
- * 8、浏览器里打开本机的 .md：扩展把那个 file:// 导航换成 ?file= 落到这里（见 lib/source.ts）
+ * 8、浏览器里打开本机的 .md：扩展把那个 file:// 导航换成 ?file= 落到这里（读文件见公共层 lib/file.ts）
  * 9、编辑这份文件之后保存，问一句要不要写回它（见 lib/writeBack.ts 与 lib/sourceHandle.ts）
  *
  * 状态都留在这里：两个模式拿到的是同一份 value / fileName / history / source，切模式只是换个视图。
@@ -19,7 +19,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import DropOverlay from '../../components/DropOverlay.tsx'
 import { createHistoryStore, type HistoryItem } from '../../lib/history.ts'
-import { pickTextFile, readDroppedFile, saveTextFile } from '../../lib/file.ts'
+import {
+  fileNameFromUrl,
+  pickTextFile,
+  READ_FILE_HINT,
+  readDroppedFile,
+  readUrlDocument,
+  saveTextFile,
+} from '../../lib/file.ts'
 import { isMarkdownLike, MARKDOWN_REJECT_MESSAGE } from '../../lib/markdown.ts'
 import { clearPendingDocument, peekPendingDocument } from '../../lib/pendingDocument.ts'
 import { createBridge, isPopupPage, openToolPopup } from '../../lib/popup.ts'
@@ -33,7 +40,6 @@ import { Toolbar } from './components/Toolbar.tsx'
 import { useThemeStylesheets } from './hooks/useThemeStylesheets.ts'
 import { MARKDOWN_FILE_KIND } from './lib/kind.ts'
 import type { MarkdownMode } from './lib/mode.ts'
-import { fileNameFromUrl, READ_FILE_HINT, readUrlDocument } from './lib/source.ts'
 import { createSourceHandleStore } from './lib/sourceHandle.ts'
 import { pickAndWrite, writeIntoHandle } from './lib/writeBack.ts'
 import SAMPLE from './sample.md?raw'
@@ -74,7 +80,7 @@ const MarkdownTool = () => {
   const [handoff] = useState(peekPendingDocument)
 
   /*
-   * 地址栏 ?file= 送来的那份本地文档（扩展换过来的导航，见 lib/source.ts）。它和上面那份交接不会
+   * 地址栏 ?file= 送来的那份本地文档（扩展换过来的导航，见公共层 lib/file.ts）。它和上面那份交接不会
    * 同时出现：首页拖入走的是页面内 replaceState，不会带上这个参数。
    * 正文要等读完才有，所以先按演示模式摆空态，读完再当一份普通文档装进去。
    */
@@ -249,10 +255,31 @@ const MarkdownTool = () => {
     clearFileQuery()
   }
 
-  const handlePickHistory = (item: HistoryItem) => {
-    if (item.contentOmitted) return
-    // 历史里带着源文件地址（当初打开它的那个 file://），回填时一起回来
-    openDocument({ name: item.name, content: item.content }, { remember: false, source: item.source })
+  /**
+   * 历史回填。内容还在就直接灌回去。
+   *
+   * 内容因为太大没留下来（contentOmitted）时，只要条目里记着当初打开它的 `file://` 地址
+   * （见 lib/history.ts 的 source），就照着地址把文件重读一遍 —— 文件通常还在原处，
+   * 没理由让这条记录永远点不动。读不到就按 READ_FILE_HINT 说清怎么办；
+   * 没有来源的（拖入 / 导入来的）仍然点不动。
+   */
+  const handlePickHistory = async (item: HistoryItem) => {
+    if (!item.contentOmitted) {
+      // 历史里带着源文件地址（当初打开它的那个 file://），回填时一起回来
+      openDocument({ name: item.name, content: item.content }, { remember: false, source: item.source })
+      return
+    }
+    const url = item.source
+    if (!url) return
+    try {
+      const file = await readUrlDocument(url)
+      openDocument(file, { remember: false, source: url })
+      // 内容重新到手了，把这条历史补全（如果它还是超过 256 KB，就仍然只留名字和时间）。
+      // 从存储里重新读一份再算，别用点击时闭包里的那份：读文件是异步的，中途历史可能已经变了
+      rememberHistory(HISTORY.add(HISTORY.read(), file.name, file.content, { source: url }))
+    } catch {
+      message.warning(READ_FILE_HINT, 8)
+    }
   }
 
   const handleDeleteHistory = (item: HistoryItem) => {

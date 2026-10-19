@@ -64,7 +64,7 @@ export function ToolPage({
       </header>
 
       {/* flex-1 吃掉顶栏之外的高度；卡片是它的 flex 项，默认 stretch，宽高都跟着撑满 */}
-      <main className="flex flex-1 p-4">
+      <main className="flex flex-1 p-2">
         <div className="w-full rounded-2xl bg-[var(--spirit-surface)] p-4 sm:p-5">
           {Content ? (
             <Suspense

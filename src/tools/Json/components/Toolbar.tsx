@@ -85,34 +85,45 @@ export function Toolbar(props: ToolbarProps) {
         </Button>
       </div>
       {history.length ? (
-        history.map((item) => (
-          <div className="json-tool-history-row" key={item.id}>
-            <button
-              type="button"
-              className="json-tool-history-item"
-              disabled={item.contentOmitted}
-              title={item.contentOmitted ? '这条内容过大，没有保留下来' : item.name}
-              onClick={() => props.onPickHistory(item)}
-            >
-              <span className="json-tool-history-info">
-                <span className="json-tool-history-name">{item.name}</span>
-                <span className="json-tool-history-date">{formatTime(item.time)}</span>
-              </span>
-              <span className="json-tool-history-note">
-                {item.contentOmitted ? '内容过大，未保留' : '点击回填'}
-              </span>
-            </button>
-            <Tooltip title="删除这条">
-              <Button
-                type="text"
-                size="small"
-                icon={<DeleteOutlined />}
-                aria-label={`删除历史 ${item.name}`}
-                onClick={() => props.onDeleteHistory(item)}
-              />
-            </Tooltip>
-          </div>
-        ))
+        history.map((item) => {
+          // 内容过大没保留下来、但记着来源文件地址的，点一下能按地址重读（见 JsonTool）；
+          // 没有来源的（拖入 / 导入来的）就只剩名字，仍然点不动
+          const reReadable = Boolean(item.contentOmitted && item.source)
+          return (
+            <div className="json-tool-history-row" key={item.id}>
+              <button
+                type="button"
+                className="json-tool-history-item"
+                disabled={item.contentOmitted && !reReadable}
+                title={
+                  item.contentOmitted
+                    ? reReadable
+                      ? '这条内容过大，没有保留下来；点击从源文件重新读取'
+                      : '这条内容过大，没有保留下来'
+                    : item.name
+                }
+                onClick={() => props.onPickHistory(item)}
+              >
+                <span className="json-tool-history-info">
+                  <span className="json-tool-history-name">{item.name}</span>
+                  <span className="json-tool-history-date">{formatTime(item.time)}</span>
+                </span>
+                <span className="json-tool-history-note">
+                  {item.contentOmitted ? (reReadable ? '内容过大，点击重读' : '内容过大，未保留') : '点击回填'}
+                </span>
+              </button>
+              <Tooltip title="删除这条">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<DeleteOutlined />}
+                  aria-label={`删除历史 ${item.name}`}
+                  onClick={() => props.onDeleteHistory(item)}
+                />
+              </Tooltip>
+            </div>
+          )
+        })
       ) : (
         <div className="json-tool-history-empty">
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有记录" />

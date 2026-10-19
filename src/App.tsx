@@ -34,6 +34,7 @@ import { DEFAULT_PRIMARY_COLOR } from "./config/schema.ts";
 import { useResolvedTheme } from "./hooks/useResolvedTheme.ts";
 import { useWindowFileDrop } from "./hooks/useWindowFileDrop.ts";
 import { readDroppedFile } from "./lib/file.ts";
+import { isJsonLike } from "./lib/json.ts";
 import { isMarkdownLike } from "./lib/markdown.ts";
 import { setPendingDocument } from "./lib/pendingDocument.ts";
 import { clearSettingsQuery, settingsFromQuery } from "./lib/query.ts";
@@ -256,20 +257,21 @@ function Page() {
   }, [activeTool]);
 
   /*
-   * 首页拖入 .md：直接进 Markdown 工具的演示模式。文件先交给 lib/pendingDocument.ts，
-   * 工具页挂载时取走 —— 那边拿到的东西和在工具里拖入完全一样（写历史 + 切演示模式）。
+   * 首页拖入 .md / .json：直接进对应工具（Markdown 演示模式 / JSON 编辑器）。文件先交给
+   * lib/pendingDocument.ts，工具页挂载时取走 —— 那边拿到的东西和在工具里拖入完全一样
+   * （写历史、装进编辑器）。
    *
-   * 只认 md：拖动过程中浏览器只肯说「有文件」，是哪个文件要等落下才知道，所以非 md 拦不了、
+   * 只认这两类：拖动过程中浏览器只肯说「有文件」，是哪个文件要等落下才知道，所以别的拦不了、
    * 也不提示，只当没发生（拖着经过首页时遮罩会亮，这是没法提前分辨的代价）。
    * 工具页打开时把这份监听关掉：那边自己也挂了一份整窗监听，同时挂着的话拖进工具会顺带触发这里的换工具。
    * configReady 一起算进来是因为骨架那会儿首页还没画出来，遮罩没处可挂。
    */
   const dropping = useWindowFileDrop({
     enabled: configReady && activeTool === null,
-    accept: isMarkdownLike,
+    accept: (file) => isMarkdownLike(file) || isJsonLike(file),
     onFile: async (file) => {
       setPendingDocument(await readDroppedFile(file));
-      openTool("markdown");
+      openTool(isJsonLike(file) ? "json" : "markdown");
     },
   });
 
@@ -405,7 +407,7 @@ function Page() {
         <NewGroupModal onClose={() => setCreatingGroup(false)} />
       )}
 
-      {dropping ? <DropOverlay text="松开就在 Markdown 演示模式里打开" /> : null}
+      {dropping ? <DropOverlay text="松开就在对应的工具里打开" /> : null}
     </div>
   );
 }

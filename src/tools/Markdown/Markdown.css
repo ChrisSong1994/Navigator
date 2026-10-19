@@ -207,7 +207,7 @@
 
 .markdown-render-empty-hint {
   margin: 0;
-  /* 读不到文件时这句是整整一句「怎么修」（见 lib/source.ts 的 READ_FILE_HINT），
+  /* 读不到文件时这句是整整一句「怎么修」（见公共层 lib/file.ts 的 READ_FILE_HINT），
      不限宽的话它会横着铺满一栏 */
   max-width: 460px;
   color: var(--spirit-muted);

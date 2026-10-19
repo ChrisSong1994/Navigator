@@ -18,11 +18,12 @@ import {
   unescapeJsonText,
 } from '../src/tools/Json/lib/json.ts'
 import { addHistoryEntry, removeHistoryEntry } from '../src/lib/history.ts'
+import { isJsonLike, JSON_EXTENSIONS } from '../src/lib/json.ts'
 import { isMarkdownLike, MARKDOWN_EXTENSIONS } from '../src/lib/markdown.ts'
 import { formatTime, isEmpty } from '../src/lib/util.ts'
 import { JSON_FILE_KIND } from '../src/tools/Json/lib/kind.ts'
 import { MARKDOWN_FILE_KIND } from '../src/tools/Markdown/lib/kind.ts'
-import { READ_FILE_HINT, fileNameFromUrl, readUrlDocument } from '../src/tools/Markdown/lib/source.ts'
+import { READ_FILE_HINT, fileNameFromUrl, readUrlDocument } from '../src/lib/file.ts'
 import { createSourceHandleStore } from '../src/tools/Markdown/lib/sourceHandle.ts'
 import { pickAndWrite, writeIntoHandle } from '../src/tools/Markdown/lib/writeBack.ts'
 import {
@@ -258,6 +259,11 @@ test('历史：内容超 256KB 只留名字和时间（localStorage 那点配额
   assert.equal(item.content, '')
   assert.equal(item.contentOmitted, true)
   assert.equal(item.name, 'big.json')
+
+  // 来源地址得跟着留下：界面上靠它决定这条能不能按 file:// 重新读（见 JSON / Markdown 的工具栏）
+  const [fromFile] = addHistoryEntry([], 'big.md', huge, { now: 2, source: 'file:///tmp/big.md' })
+  assert.equal(fromFile.contentOmitted, true)
+  assert.equal(fromFile.source, 'file:///tmp/big.md')
 })
 
 test('历史：删除按 id 走，删不存在的 id 不动列表', () => {
@@ -773,6 +779,32 @@ test('整窗拖入：认 md / markdown / txt，后缀大小写都算，别的都
   }
 })
 
+test('整窗拖入：JSON 认 json / json5 + application/json，后缀大小写都算', () => {
+  const file = (name, type = '') => ({ name, type })
+
+  // 后缀认（macOS 上 .json 的 File.type 常常是空串）
+  for (const name of ['a.json', 'CONFIG.JSON', 'note.json5', 'x.JSON5']) {
+    assert.equal(isJsonLike(file(name)), true, `${name} 应该是 JSON`)
+  }
+
+  // MIME 认（后缀认不出来时兜一道；JSON5 的 MIME 不算偏门）
+  assert.equal(isJsonLike(file('没有后缀', 'application/json')), true)
+  assert.equal(isJsonLike(file('没有后缀', 'application/json5')), true)
+
+  // 不认的：双后缀、别的文本格式、以及后缀和 MIME 都没有的
+  for (const name of ['a.json.bak', 'a.md', 'a.txt', 'a.jsonc', 'json', 'a']) {
+    assert.equal(isJsonLike(file(name)), false, `${name} 不该当 JSON`)
+  }
+  // text/plain 不能当 JSON 收：它是 Markdown 的兜底 MIME，两个工具的分流不能重叠
+  assert.equal(isJsonLike(file('没有后缀', 'text/plain')), false)
+  assert.equal(isMarkdownLike(file('没有后缀', 'text/plain')), true)
+
+  // 两张表不能有交集，否则首页按顺序分流会把一类文件送错工具
+  for (const ext of JSON_EXTENSIONS) {
+    assert.equal(MARKDOWN_EXTENSIONS.includes(ext), false, `${ext} 同时在两张表里`)
+  }
+})
+
 /* 打开本机的 .md：扩展那头（service worker + manifest）与工具页那头的约定 --------- */
 
 /** 扩展的那几个文件不在 src 里，也不进构建，只能按源码比对（见下面两条用例的注释） */
@@ -790,28 +822,54 @@ test('扩展：manifest 要了 file:// 的访问权，service worker 挂上了�
   const worker = readExtensionFile('service_worker.js')
   assert.match(worker, /chrome\.tabs\.onUpdated\.addListener/, 'service worker 里没有导航监听')
   // 换页地址的形状是这头和工具页之间的约定：?tool= 认出工具，?file= 认出读哪份文件
-  assert.match(worker, /index\.html\?tool=markdown&file=/, '换页地址和工具页的约定对不上')
+  assert.match(worker, /index\.html\?tool=\$\{tool\}&file=/, '换页地址和工具页的约定对不上')
+  assert.match(worker, /\? 'json' : MARKDOWN_RE\.test\(path\) \? 'markdown' : null/, '按后缀分流到工具的那段变了')
 })
 
-test('扩展：service worker 的后缀表和 src/lib/markdown.ts 一份（两边各写一份、会漂）', () => {
+test('扩展：service worker 的后缀表和 src/lib/markdown.ts / json.ts 各一份（两边各写一份、会漂）', () => {
   const worker = readExtensionFile('service_worker.js')
-  const declared = worker.match(/const MARKDOWN_RE = \/\\\.\(([^)]+)\)\$\/i/)
-  assert.ok(declared, 'service_worker.js 里找不到 MARKDOWN_RE —— 正则改了写法就得同步改这条断言')
+  // 源码里是 `const X_RE = /\.(a|b)$/i`，这里把两个表分别抠出来（名字写死，别拼正则 ——
+  // 拼出来那层转义比原正则还难读）
+  const readTable = (pattern, name) => {
+    const declared = worker.match(pattern)
+    assert.ok(declared, `service_worker.js 里找不到 ${name} —— 正则改了写法就得同步改这条断言`)
+    return declared[1].split('|').map((ext) => `.${ext}`)
+  }
 
-  const suffixes = declared[1].split('|').map((ext) => `.${ext}`)
+  const markdownSuffixes = readTable(
+    /const MARKDOWN_RE = \/\\\.\(([^)]+)\)\$\/i/,
+    'MARKDOWN_RE',
+  )
+  const jsonSuffixes = readTable(/const JSON_RE = \/\\\.\(([^)]+)\)\$\/i/, 'JSON_RE')
   assert.deepEqual(
-    [...suffixes].sort(),
+    [...markdownSuffixes].sort(),
     [...MARKDOWN_EXTENSIONS].sort(),
-    '后缀表漂了：service worker 拦下的和工具认的不是同一批后缀',
+    '后缀表漂了：service worker 拦下的 Markdown 和工具认的不是同一批后缀',
+  )
+  assert.deepEqual(
+    [...jsonSuffixes].sort(),
+    [...JSON_EXTENSIONS].sort(),
+    '后缀表漂了：service worker 拦下的 JSON 和工具认的不是同一批后缀',
   )
 
   // 判定本身也走一遍：只看地址结尾，`a.md.bak` / `md` 这种不算文档
-  const isDocument = (path) => new RegExp(`\\.(${declared[1]})$`, 'i').test(path)
-  assert.equal(isDocument('/Users/me/53%20%E8%AE%BE%E8%AE%A1.md'), true)
-  assert.equal(isDocument('/Users/me/README.TXT'), true)
-  assert.equal(isDocument('/Users/me/md'), false)
-  assert.equal(isDocument('/Users/me/a.md.bak'), false)
-  assert.equal(isDocument('/Users/me/a.png'), false)
+  // （表里的元素带点，拼进正则前得摘掉，否则成了 `\.(.md)` 这种要两个点的写法）
+  const isDocument = (extensions, path) =>
+    new RegExp(`\\.(${extensions.map((ext) => ext.replace(/^\./, '')).join('|')})$`, 'i').test(path)
+  const isMarkdown = (path) => isDocument(markdownSuffixes, path)
+  const isJson = (path) => isDocument(jsonSuffixes, path)
+  assert.equal(isMarkdown('/Users/me/53%20%E8%AE%BE%E8%AE%A1.md'), true)
+  assert.equal(isMarkdown('/Users/me/README.TXT'), true)
+  assert.equal(isMarkdown('/Users/me/md'), false)
+  assert.equal(isMarkdown('/Users/me/a.md.bak'), false)
+  assert.equal(isMarkdown('/Users/me/a.png'), false)
+  assert.equal(isJson('/Users/me/package.json'), true)
+  assert.equal(isJson('/Users/me/tsconfig.JSON5'), true)
+  assert.equal(isJson('/Users/me/a.json.bak'), false)
+  assert.equal(isJson('/Users/me/a.js'), false)
+  // 两张表各有各的，别让 markdown 那条把 json 也吞了
+  assert.equal(isMarkdown('/Users/me/package.json'), false)
+  assert.equal(isJson('/Users/me/README.md'), false)
 })
 
 test('本地文件：文件名从地址里取，带百分号转义的还原回来', () => {

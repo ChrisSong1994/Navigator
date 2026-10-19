@@ -4,7 +4,7 @@
  * 首页是 `/`，工具页是 `/?tool=json`：刷新、把链接发给别人、以及「弹出到独立窗口」开出去的那个
  * 窗口（它带 `?tool=json&popup=1`），都靠这个参数落到同一个工具上。
  *
- * 工具页要打开的那份本地文件走 `?file=`（只有 Markdown 用，见 tools/Markdown/lib/source.ts）。
+ * 工具页要打开的那份本地文件走 `?file=`（Markdown / JSON 都用，读文件见 src/lib/file.ts 的 readUrlDocument）。
  * 这两个参数都是「这一页当前开着什么」，所以换工具、返回首页时一起作废。
  *
  * 用 replaceState 而不是 pushState：换工具和返回首页都不进历史记录，返回首页走工具页左上角那个箭头。
