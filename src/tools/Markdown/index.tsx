@@ -1,28 +1,34 @@
 /**
- * Markdown 工具。原项目 pages/Markdown/index.tsx 照搬：bytemd 编辑器（8 个插件 + 中文语言包 + 示例文档），
- * 左边写右边预览。篮子外的东西换成浏览器能力：
+ * Markdown 工具。原项目 pages/Markdown/index.tsx 照搬：bytemd 编辑器（8 个插件 + 中文语言包 + 示例文档）。
+ * 篮子外的东西换成浏览器能力：
  *
- * 1、编辑 / 预览（bytemd，插件见 plugins.ts）
- * 2、导入 / 导出 .md（公共层的 pickTextFile / saveTextFile，原项目这段是注释掉的）
- * 3、把 .md 直接拖进来（原项目没有）
- * 4、历史记录（存内容，点一下回填；原项目没有）
- * 5、弹出到独立窗口 + 双向同步（原项目没有）
- * 6、亮 / 暗两套主题（原项目固定亮色）
+ * 1、编辑模式（bytemd，左写右预览，插件见 plugins.ts，组件见 MarkdownEditor.tsx）
+ * 2、演示模式（只读渲染 + 左侧文档目录，见 MarkdownRender.tsx）
+ * 3、导入 / 导出 .md（公共层的 pickTextFile / saveTextFile）
+ * 4、整窗拖入 .md：拖到窗口里任何地方都算数，一律切演示模式渲染（公共层 hooks/useWindowFileDrop.ts）
+ * 5、历史记录（存内容，两个模式共用同一份，点一下回填；原项目没有）
+ * 6、弹出到独立窗口 + 双向同步（原项目没有）
+ * 7、亮 / 暗两套主题（原项目固定亮色）
+ *
+ * 状态都留在这里：两个模式拿到的是同一份 value / fileName / history，切模式只是换个视图。
  */
-import { Editor } from '@bytemd/react'
 import { message } from 'antd'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import EDITOR_ZH from 'bytemd/locales/zh_Hans.json'
 
+import DropOverlay from '../../components/DropOverlay.tsx'
 import { createHistoryStore, type HistoryItem } from '../../lib/history.ts'
 import { pickTextFile, readDroppedFile, saveTextFile } from '../../lib/file.ts'
+import { isMarkdownLike, MARKDOWN_REJECT_MESSAGE } from '../../lib/markdown.ts'
+import { clearPendingDocument, peekPendingDocument } from '../../lib/pendingDocument.ts'
 import { createBridge, isPopupPage, openToolPopup } from '../../lib/popup.ts'
 import { useColorScheme } from '../../hooks/useColorScheme.ts'
-import { useFillHeight } from '../../hooks/useFillHeight.ts'
+import { useWindowFileDrop } from '../../hooks/useWindowFileDrop.ts'
+import { MarkdownEditor } from './MarkdownEditor.tsx'
+import { MarkdownRender } from './MarkdownRender.tsx'
 import { Toolbar } from './components/Toolbar.tsx'
 import { useThemeStylesheets } from './hooks/useThemeStylesheets.ts'
 import { MARKDOWN_FILE_KIND } from './lib/kind.ts'
-import { PLUGINS } from './plugins.ts'
+import type { MarkdownMode } from './lib/mode.ts'
 import SAMPLE from './sample.md?raw'
 import './Markdown.css'
 
@@ -38,19 +44,34 @@ const POPUP = {
 } as const
 
 const MarkdownTool = () => {
-  const [value, setValue] = useState(SAMPLE)
-  const [currentFileName, setCurrentFileName] = useState<string | null>(null)
-  const [history, setHistory] = useState<HistoryItem[]>(() => HISTORY.read())
-  const [dragging, setDragging] = useState(false)
+  /*
+   * 首页拖入交接过来的那份文档（见 lib/pendingDocument.ts）。首页自己不做渲染，把工具页打开就算完事，
+   * 呈现和写历史都在这里做 —— 于是「首页拖入」和「工具里拖入」走的是同一份状态。
+   * 首屏就要渲染它，所以渲染期先读一眼（读不是副作用）；清掉和落盘放在下面的 effect 里。
+   */
+  const [handoff] = useState(peekPendingDocument)
+
+  const [value, setValue] = useState(handoff?.content ?? SAMPLE)
+  const [currentFileName, setCurrentFileName] = useState<string | null>(handoff?.name ?? null)
+  // 交接过来这份也算一条历史；HISTORY.add 只做纯计算，落盘同样在 effect 里
+  const [history, setHistory] = useState<HistoryItem[]>(() =>
+    handoff ? HISTORY.add(HISTORY.read(), handoff.name, handoff.content) : HISTORY.read(),
+  )
+  /** 打开工具默认编辑模式；整窗拖入（含首页交接）会自动切到演示模式 */
+  const [mode, setMode] = useState<MarkdownMode>(handoff ? 'view' : 'edit')
   // 地址栏带 popup=1 就是那个被弹出来的窗口：工具栏最后一位换成「同步到主窗口」
   const [popup] = useState(isPopupPage)
 
+  // 交接点用完就清（别让下次进工具又读到同一份），顺手把它落进历史。
+  // 写盘是副作用，渲染期不能做，所以放这儿；StrictMode 下跑两遍也没关系：清是幂等的，
+  // addHistoryEntry 按文件名去重，写两遍结果一样
+  useEffect(() => {
+    clearPendingDocument()
+    if (handoff) HISTORY.write(HISTORY.add(HISTORY.read(), handoff.name, handoff.content))
+  }, [handoff])
+
   const scheme = useColorScheme()
   useThemeStylesheets(scheme)
-
-  const hostRef = useRef<HTMLDivElement>(null)
-  // 不留余量：编辑器一路铺到视口底部，卡片自身的下内边距天然就是间距
-  const height = useFillHeight(hostRef, 0)
 
   // 改一次存一次。历史最多 20 条、内容也有上限，不值得为它做合并写入
   const rememberHistory = (items: HistoryItem[]) => {
@@ -58,11 +79,27 @@ const MarkdownTool = () => {
     HISTORY.write(items)
   }
 
+  /**
+   * 换一份文档进来。三条入口共用这一个：
+   *
+   * - 整窗拖入：记历史 + 切演示模式（拖进来就是要看这份文档）
+   * - 导入 / 演示模式的上传：记历史，模式不动（「读进当前模式」）
+   * - 历史回填：不写历史（它本来就在历史里），模式也不动
+   */
+  const openDocument = (
+    file: { name: string; content: string },
+    { remember = true, render = false } = {},
+  ) => {
+    setValue(file.content)
+    setCurrentFileName(file.name)
+    if (remember) rememberHistory(HISTORY.add(history, file.name, file.content))
+    if (render) setMode('view')
+  }
+
   const handleImport = async () => {
     const picked = await pickTextFile(MARKDOWN_FILE_KIND.accept)
     if (!picked) return
-    setValue(picked.content)
-    setCurrentFileName(picked.name)
+    openDocument(picked)
   }
 
   const handleSave = async () => {
@@ -79,8 +116,7 @@ const MarkdownTool = () => {
 
   const handlePickHistory = (item: HistoryItem) => {
     if (item.contentOmitted) return
-    setValue(item.content)
-    setCurrentFileName(item.name)
+    openDocument({ name: item.name, content: item.content }, { remember: false })
   }
 
   const handleDeleteHistory = (item: HistoryItem) => {
@@ -134,16 +170,13 @@ const MarkdownTool = () => {
     message.success('已同步到主窗口')
   }, [value, currentFileName])
 
-  // 拖进来的 .md 直接读成内容（原项目没有这条路径，JSON 那边有，保持一致）
-  const handleDrop = async (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault()
-    setDragging(false)
-    const file = event.dataTransfer.files[0]
-    if (!file) return
-    const dropped = await readDroppedFile(file)
-    setValue(dropped.content)
-    setCurrentFileName(dropped.name)
-  }
+  // 整窗拖入：拖到窗口里任何地方都算数，落下来就是「我要看这份文档」→ 切演示模式渲染
+  const dragging = useWindowFileDrop({
+    accept: isMarkdownLike,
+    onFile: async (file) => openDocument(await readDroppedFile(file), { render: true }),
+    // 不认的文件不改内容、也不切模式
+    onReject: () => message.warning(MARKDOWN_REJECT_MESSAGE),
+  })
 
   return (
     <div className="markdown-tool-root">
@@ -151,6 +184,8 @@ const MarkdownTool = () => {
         value={value}
         history={history}
         popup={popup}
+        mode={mode}
+        onModeChange={setMode}
         onImport={() => void handleImport()}
         onSave={() => void handleSave()}
         onClear={handleClear}
@@ -161,26 +196,17 @@ const MarkdownTool = () => {
         onSyncToMain={handleSyncToMain}
       />
 
-      <div
-        className="markdown-tool-editor"
-        ref={hostRef}
-        style={{ height }}
-        onDragOver={(event) => {
-          // 不拦默认行为的话 drop 事件根本不会来
-          event.preventDefault()
-          setDragging(true)
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(event) => void handleDrop(event)}
-      >
-        <Editor
+      {mode === 'edit' ? (
+        <MarkdownEditor value={value} onChange={setValue} />
+      ) : (
+        <MarkdownRender
           value={value}
-          plugins={PLUGINS}
-          locale={EDITOR_ZH}
-          onChange={(next: string) => setValue(next)}
+          fileName={currentFileName}
+          onUpload={() => void handleImport()}
         />
-        {dragging ? <div className="markdown-tool-drop">松开就把文件读进来</div> : null}
-      </div>
+      )}
+
+      {dragging ? <DropOverlay text="松开就渲染这份文档" /> : null}
     </div>
   )
 }

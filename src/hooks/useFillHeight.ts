@@ -10,8 +10,8 @@ import type { RefObject } from 'react'
  * 容器离顶部就近了，高度跟着变大，编辑器会在滚动时抽动。
  *
  * 另减掉 `spaceBelow()`：容器自己够不到、但会算进文档高度的那些下外边距/下内边距/下边框。
- * 不减的话容器一路铺到视口底边，底下的东西（工具页 main 的 pb-20 加上卡片自己的下内边距，
- * 正好 100px）就顶到视口外面去了 —— 页面比视口高一截，滚下去却是空的。
+ * 不减的话容器一路铺到视口底边，底下的东西（工具页 main 的 p-4 加上卡片自己的 p-4/p-5）
+ * 就顶到视口外面去了 —— 页面比视口高一截，滚下去却是空的。
  */
 export function useFillHeight(
   ref: RefObject<HTMLElement | null>,
@@ -47,7 +47,7 @@ export function useFillHeight(
  * 容器底下还压着多少「不属于它」的高度：各级祖先的下外边距、下内边距、下边框，加上容器自己的下外边距。
  *
  * 这些都在容器的盒子之外（所以量它自己的高度不会反过来影响这些数字，来回量不会震荡），
- * 但全都会算进文档高度。每次现量而不是写死常量：工具页的 pb-20、卡片的 p-4/p-5 都是会随断点变的。
+ * 但全都会算进文档高度。每次现量而不是写死常量：工具页 main 的 p-4、卡片的 p-4/p-5 都是会随断点变的。
  */
 function spaceBelow(element: HTMLElement): number {
   let total = parseFloat(getComputedStyle(element).marginBottom) || 0

@@ -20,6 +20,7 @@ import {
 } from "react";
 import { AppHeader } from "./components/AppHeader.tsx";
 import { ConfigDrawer } from "./components/ConfigDrawer.tsx";
+import DropOverlay from "./components/DropOverlay.tsx";
 import { GlobalSearch } from "./components/GlobalSearch.tsx";
 import { GroupToc } from "./components/GroupToc.tsx";
 import { LinkFormModal } from "./components/LinkFormModal.tsx";
@@ -31,6 +32,11 @@ import { ConfigProvider } from "./config/ConfigProvider.tsx";
 import { useConfig } from "./config/configContext.ts";
 import { DEFAULT_PRIMARY_COLOR } from "./config/schema.ts";
 import { useResolvedTheme } from "./hooks/useResolvedTheme.ts";
+import { useWindowFileDrop } from "./hooks/useWindowFileDrop.ts";
+import { readDroppedFile } from "./lib/file.ts";
+import { isMarkdownLike } from "./lib/markdown.ts";
+import { setPendingDocument } from "./lib/pendingDocument.ts";
+import { clearSettingsQuery, settingsFromQuery } from "./lib/query.ts";
 import { findTool } from "./tools/registry.tsx";
 import { clearToolQuery, setToolQuery, toolFromQuery } from "./tools/query.ts";
 import { WallpaperProvider } from "./wallpaper/WallpaperProvider.tsx";
@@ -164,7 +170,8 @@ function PageSkeleton() {
 
 function Page() {
   const { settings, groups, groupIds, configReady } = useConfig();
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(settingsFromQuery);
+
   /**
    * 工具箱里正在打开的工具；null 表示首页。
    * 初值从地址栏来：刷新、别人发来的 `?tool=json` 链接、以及「弹出到独立窗口」开的那个窗口，
@@ -247,6 +254,24 @@ function Page() {
   useLayoutEffect(() => {
     if (!activeTool) window.scrollTo({ top: homeScrollRef.current });
   }, [activeTool]);
+
+  /*
+   * 首页拖入 .md：直接进 Markdown 工具的演示模式。文件先交给 lib/pendingDocument.ts，
+   * 工具页挂载时取走 —— 那边拿到的东西和在工具里拖入完全一样（写历史 + 切演示模式）。
+   *
+   * 只认 md：拖动过程中浏览器只肯说「有文件」，是哪个文件要等落下才知道，所以非 md 拦不了、
+   * 也不提示，只当没发生（拖着经过首页时遮罩会亮，这是没法提前分辨的代价）。
+   * 工具页打开时把这份监听关掉：那边自己也挂了一份整窗监听，同时挂着的话拖进工具会顺带触发这里的换工具。
+   * configReady 一起算进来是因为骨架那会儿首页还没画出来，遮罩没处可挂。
+   */
+  const dropping = useWindowFileDrop({
+    enabled: configReady && activeTool === null,
+    accept: isMarkdownLike,
+    onFile: async (file) => {
+      setPendingDocument(await readDroppedFile(file));
+      openTool("markdown");
+    },
+  });
 
   // 扩展环境且本机还没有同步种子时，配置只能异步读：先渲染骨架，
   // 不用内置配置画一版（卡片视图、内置分组）再跳成用户配置
@@ -360,7 +385,14 @@ function Page() {
 
       <FloatButton.BackTop style={{ insetInlineEnd: 28, insetBlockEnd: 28 }} />
       {drawerOpen && (
-        <ConfigDrawer open onClose={() => setDrawerOpen(false)} />
+        <ConfigDrawer
+          open
+          onClose={() => {
+            setDrawerOpen(false);
+            // 关掉面板就把地址栏里的 ?settings=1 抹掉，刷新不会又弹出来
+            clearSettingsQuery();
+          }}
+        />
       )}
       {addingTo && groups[addingTo] && (
         <LinkFormModal
@@ -372,6 +404,8 @@ function Page() {
       {creatingGroup && (
         <NewGroupModal onClose={() => setCreatingGroup(false)} />
       )}
+
+      {dropping ? <DropOverlay text="松开就在 Markdown 演示模式里打开" /> : null}
     </div>
   );
 }

@@ -17,6 +17,7 @@ import {
   unescapeJsonText,
 } from '../src/tools/Json/lib/json.ts'
 import { addHistoryEntry, removeHistoryEntry } from '../src/lib/history.ts'
+import { isMarkdownLike } from '../src/lib/markdown.ts'
 import { formatTime, isEmpty } from '../src/lib/util.ts'
 import { JSON_FILE_KIND } from '../src/tools/Json/lib/kind.ts'
 import { MARKDOWN_FILE_KIND } from '../src/tools/Markdown/lib/kind.ts'
@@ -733,6 +734,24 @@ test('文件类型：accept 里得含扩展名，mime / 描述不缺（选文件
   // 存文件对话框的默认后缀就是它，写错的话存出来是个没有后缀的文件
   assert.equal(MARKDOWN_FILE_KIND.extension, '.md')
   assert.equal(JSON_FILE_KIND.extension, '.json')
+})
+
+test('整窗拖入：认 md / markdown / txt，后缀大小写都算，别的都拒', () => {
+  const file = (name, type = '') => ({ name, type })
+
+  // 后缀认（macOS 上 .md 的 File.type 是空串，只认 MIME 的话这些全会被拒）
+  for (const name of ['a.md', 'README.MD', 'note.markdown', 'x.mdown', 'y.mkd', 'z.mkdn', 'plain.txt']) {
+    assert.equal(isMarkdownLike(file(name)), true, `${name} 应该是 Markdown`)
+  }
+
+  // MIME 认（后缀认不出来时兜一道）
+  assert.equal(isMarkdownLike(file('没有后缀', 'text/markdown')), true)
+  assert.equal(isMarkdownLike(file('没有后缀', 'text/plain')), true)
+
+  // 不认的：图片、归档、双后缀、以及后缀和 MIME 都没有的
+  for (const name of ['a.png', 'a.md.bak', 'md', 'a.pdf', 'a']) {
+    assert.equal(isMarkdownLike(file(name)), false, `${name} 不该当 Markdown`)
+  }
 })
 
 // --- Transform：JSON / YAML / JS Object 互转 ---------------------------------

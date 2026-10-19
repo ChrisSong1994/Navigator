@@ -1,23 +1,28 @@
 import {
   ClearOutlined,
   DeleteOutlined,
+  EditOutlined,
   ExportOutlined,
   HistoryOutlined,
+  ReadOutlined,
   SaveOutlined,
   SyncOutlined,
   UploadOutlined,
 } from '@ant-design/icons'
-import { Button, Empty, Popover, Tooltip } from 'antd'
+import { Button, Empty, Popover, Segmented, Tooltip } from 'antd'
 import type { ReactNode } from 'react'
 
 import Copy from '../../../components/Copy.tsx'
 import type { HistoryItem } from '../../../lib/history.ts'
 import { formatTime } from '../../../lib/util.ts'
+import type { MarkdownMode } from '../lib/mode.ts'
 
 /**
  * 编辑器上方那排图标按钮，照 JSON 工具的工具栏写：
- * 复制 → 导入 → 保存 → 历史 → 【弹出窗口 / 同步】→ 清除。
+ * 【编辑 / 演示】→ 复制 → 导入 → 保存 → 历史 → 【弹出窗口 / 同步】→ 清除。
  *
+ * 两个模式共用这一排：演示模式里「导入」就是上传文档渲染，「复制」复制的是 md 源码，
+ * 「历史」是同一份记录，所以不必给演示模式另起一排按钮。
  * 原项目这一段是注释掉的（导入/下载下拉菜单），只留了空的 SAVE_ICON / IMPORT_ICON 常量；
  * 这里接上，动作与 JSON 工具一致（导入 / 导出 .md / 历史 / 弹窗）。
  */
@@ -42,6 +47,9 @@ export interface ToolbarProps {
   history: HistoryItem[]
   /** 当前处于弹窗模式：最后一个动作从「弹出到独立窗口」换成「同步到主窗口」 */
   popup: boolean
+  /** 当前模式（编辑 / 演示），切换按钮在工具栏最左边 */
+  mode: MarkdownMode
+  onModeChange: (mode: MarkdownMode) => void
   onImport: () => void
   onSave: () => void
   onClear: () => void
@@ -104,6 +112,17 @@ export function Toolbar(props: ToolbarProps) {
 
   return (
     <div className="markdown-tool-toolbar">
+      <Segmented
+        size="small"
+        value={props.mode}
+        onChange={(value) => props.onModeChange(value as MarkdownMode)}
+        options={[
+          { label: '编辑', value: 'edit', icon: <EditOutlined /> },
+          { label: '演示', value: 'view', icon: <ReadOutlined /> },
+        ]}
+      />
+      <span className="markdown-tool-toolbar-gap" />
+
       <Copy value={props.value} />
       <ToolbarButton title="导入" icon={<UploadOutlined />} onClick={props.onImport} />
       <ToolbarButton title="保存" icon={<SaveOutlined />} onClick={props.onSave} />

@@ -42,6 +42,11 @@
   gap: 2px;
 }
 
+/* 模式切换和后面那排图标之间空一格，别让 Segmented 贴着「复制」 */
+.markdown-tool-toolbar-gap {
+  width: 8px;
+}
+
 /* 有历史时那个按钮要看得出来 */
 .markdown-tool-toolbar .ant-btn[data-active='true'] {
   background: var(--spirit-inset);
@@ -150,18 +155,172 @@
   height: 100%;
 }
 
-.markdown-tool-drop {
-  position: absolute;
-  inset: 0;
-  z-index: 10;
-  display: grid;
-  place-items: center;
-  border: 1px dashed var(--spirit-accent);
+/* 演示模式 ---------------------------------------------------------------- */
+
+/*
+ * 目录 + 正文两栏。外壳照编辑模式的 .markdown-tool-editor（同样的边框与圆角）：两个模式占同一块位置，
+ * 切换时这一圈框不动、只有里面的内容换，看着才稳。
+ */
+.markdown-render-root {
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--spirit-border-strong);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--spirit-accent) 10%, transparent);
+}
+
+/* 空文档：没有目录，整块居中 */
+.markdown-render-root.markdown-render-empty {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  padding: 24px;
+}
+
+.markdown-render-empty-hint {
+  margin: 0;
+  color: var(--spirit-muted);
+  font-size: 12px;
+}
+
+/* 左侧目录：窄屏整列不显示（和首页的分组目录一致），lg 以上固定 240px */
+.markdown-render-toc {
+  display: none;
+  width: 240px;
+  min-height: 0;
+  flex: none;
+  flex-direction: column;
+  padding: 12px 8px 0 12px;
+  border-right: 1px solid var(--spirit-border);
+}
+
+@media (min-width: 1024px) {
+  .markdown-render-toc {
+    display: flex;
+  }
+}
+
+.markdown-render-toc-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 8px 8px;
+}
+
+.markdown-render-toc-title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.markdown-render-toc-file {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--spirit-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.markdown-render-toc-nav {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.markdown-render-toc-list {
+  margin: 0;
+  padding: 0 0 8px 4px;
+  list-style: none;
+}
+
+/* 每个标题一行：层级靠 paddingLeft 内联给（8px + 每深一级 12px），太长就省略号 */
+.markdown-render-toc-item {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--spirit-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.markdown-render-toc-item:hover {
+  background: var(--spirit-inset);
   color: var(--spirit-text);
-  font-size: 14px;
-  pointer-events: none;
+}
+
+.markdown-render-toc-item[data-active='true'] {
+  background: color-mix(in srgb, var(--spirit-accent) 10%, transparent);
+  color: var(--spirit-accent);
+  font-weight: 500;
+}
+
+/*
+ * 正文栏：滚动在它内部发生（高度由 useFillHeight 量，见 MarkdownRender.tsx）。
+ *
+ * position: relative 不是为了自己定位，是给正文里绝对定位的元素当包含块 —— 最典型的是脚注插件那个
+ * `h2.sr-only`（position: absolute）。没有定位祖先时它的包含块一路找到 ToolPage 的 main（position:
+ * relative），静态位置落在文档末尾两千多像素处；而 overflow: auto 只裁自己的"包含块在自己内部"的
+ * 绝对定位后代，包含块在外面的它裁不掉 —— 结果正文栏内部滚动一切正常，整页却被撑高一千多像素，
+ * 滚下去一片空白。给了包含块之后它跟着正文滚、也被正文栏裁掉。
+ * （编辑模式的 .markdown-tool-editor 本来就有 position: relative + overflow: hidden，所以没这毛病。）
+ */
+.markdown-render-pane {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/*
+ * 正文的底色与留白只覆盖演示模式这一份（两段选择器权重 (0,2,0)，压得过 github-markdown-css 的
+ * .markdown-body；那两张主题样式表是运行时才挂上去的，文档顺序上反而在后面，靠权重说话）。
+ *
+ * - 底色：它自带的是一块整画布底色（暗色是 #0d1117），落在 --spirit-surface 的卡片上是一块异色，
+ *   这里让它透出卡片的底色（同 Color.css 里「颜色一律走 --spirit-* token」的规矩）。
+ * - 留白与宽度：自带的四周 45px 在卡片里偏大，收成上面 28 / 两侧 40 / 底部 72（滚到底时留一口气）；
+ *   宽度得自己给 —— github-markdown-css v5 里已经**没有** max-width 那条（唯一带 max-width 的是
+ *   bytemd 自己的 `.bytemd-preview .markdown-body { max-width: 800px }`，只作用于编辑器预览区），
+ *   不加的话正文会一路铺满，所以这里是这轮定下的 980px 居中阅读栏。
+ * 编辑器里的预览区不受影响（选择器挂在 .markdown-render-pane 下）。
+ */
+.markdown-render-pane .markdown-body {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 28px 40px 72px;
+  background: transparent;
+}
+
+/*
+ * 脚注插件（@bytemd/plugin-gfm 的 footnotes）会给它自己生成的「Footnotes」小标题挂 `.sr-only`，
+ * 指望宿主提供这个类。而 Tailwind v4 只给源码里出现过的类名生成工具类 —— `.sr-only` 是运行时由
+ * 第三方加上去的，源码里从没出现过，所以那条规则压根没生成：预览和演示模式里都会实打实多出一行
+ * 「Footnotes」。这里按 Tailwind 的定义补一份（两个模式的预览都受益）。
+ */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
 }
 
 /**

@@ -14,7 +14,8 @@
 - Bing 壁纸：关闭、从最近 8 天中选取、按间隔自动轮播、自定义图片地址；配置里只持久化一个图片直链
 - Chrome 书签双向同步：手动从书签栏 /「导航精灵」拉取，或把当前配置推送 / 覆盖到书签栏下的「导航精灵」文件夹
 - 数据导入导出：标准配置 JSON，以及 Chrome 书签 HTML
-- 工具箱：顶栏入口弹出工具抽屉，选中后整页打开该工具，左上角返回箭头回首页；目前有颜色工具（取色面板、HEX / RGB / CMYK / HSV / HSL 互转、颜色记录）、JSON 工具（格式化 / 压缩 / 校验并给出行列与出错片段 / 修复 / JSON5 兼容解析 / 转义与去转义 / 上传下载）、Markdown 工具（编辑 + 预览、GFM、公式、图表、代码高亮、导入导出 .md）、AST 工具（JS / TS、JSON、YAML 三种语言转 AST，树与 JSON 两种视图，悬停联动源码高亮）和 Transform 工具（JSON / YAML / JavaScript 对象互转 TypeScript、Go、Java、Kotlin、MySQL、JSON Schema），工具界面按需懒加载
+- 工具箱：顶栏入口弹出工具抽屉，选中后整页打开该工具，左上角返回箭头回首页；目前有颜色工具（取色面板、HEX / RGB / CMYK / HSV / HSL 互转、颜色记录）、JSON 工具（格式化 / 压缩 / 校验并给出行列与出错片段 / 修复 / JSON5 兼容解析 / 转义与去转义 / 上传下载）、Markdown 工具（编辑 + 预览、演示模式（左侧目录、拖入 .md 即渲染）、GFM、公式、图表、代码高亮、导入导出 .md）、AST 工具（JS / TS、JSON、YAML 三种语言转 AST，树与 JSON 两种视图，悬停联动源码高亮）和 Transform 工具（JSON / YAML / JavaScript 对象互转 TypeScript、Go、Java、Kotlin、MySQL、JSON Schema），工具界面按需懒加载
+- 扩展弹窗：点扩展图标弹出「收藏当前页 + 工具列表 + 外观开关」，收藏时挑分组（或就地新建）直接写进配置，主题模式 / 展示模式一键切换
 
 ## 数据流
 
@@ -99,7 +100,7 @@ chrome_bookmarks_demo.html ──pnpm import:bookmarks──▶ global_original.
 
 顶栏的工具箱按钮弹出工具抽屉，选中一个工具就整页打开它（首页 `/` ↔ 工具页 `/?tool=json`），左上角返回箭头回首页，右上角仍可直接换工具。工具名会写进地址栏，刷新、复制链接、以及「弹出到独立窗口」开出去的那个窗口都能直接落到同一个工具上；认不出的参数当首页处理。
 
-工具内容按需懒加载：不打开工具箱里的工具，就不下载那份 chunk。
+工具内容按需懒加载：不打开工具箱里的工具，就不下载那份 chunk。扩展弹窗里也有一份同样的工具列表（同一份 `ToolList`，见「扩展弹窗」）。
 
 ### 颜色工具
 
@@ -132,18 +133,43 @@ chrome_bookmarks_demo.html ──pnpm import:bookmarks──▶ global_original.
 
 - 左编辑右预览（bytemd，底层 CodeMirror 5），预览支持 GFM：表格、任务列表、脚注、`~~删除线~~`、gemoji（`:thumbsup:` → 👍）、自动链接
 - 公式（KaTeX）、图表（mermaid）、代码块高亮（highlight.js），都随预览即时渲染
-- 工具栏（左边一排）：复制、导入 `.md`、保存 / 导出 `.md`（优先 `showSaveFilePicker`，取消就当没发生）、历史记录、弹出到独立窗口、清除
-- 历史记录：最多 20 条存在 localStorage（`navigator.markdown.history`，保存 / 弹窗同步时各记一条，内容超过 256 KB 只留名字和时间），点一条回填
+- 工具栏（左边一排）：编辑 / 演示切换、复制、导入 `.md`、保存 / 导出 `.md`（优先 `showSaveFilePicker`，取消就当没发生）、历史记录、弹出到独立窗口、清除
+- 历史记录：最多 20 条存在 localStorage（`navigator.markdown.history`，拖入 / 上传 / 保存时各记一条，内容超过 256 KB 只留名字和时间），点一条回填；编辑与演示两个模式共用这一份
 - 弹出到独立窗口：`window.open` 开 `/?tool=markdown&popup=1`，两个窗口用 BroadcastChannel 双向同步内容；弹窗里那个按钮变成「同步到主窗口」
-- 拖拽 `.md` 文件到编辑区直接载入（原项目没有这条路径，JSON 那边有，保持一致）
+- 拖拽 `.md` 文件到窗口（不只编辑器那一块）直接载入，并自动切到演示模式（见下）
 - bytemd 自带的那排右侧图标（目录、帮助、仅编辑区 / 仅预览区）留在原地，分栏 ↔ 单栏由它切换
+
+**演示模式**（`MarkdownRender.tsx`）是整份文档的只读阅读视图，左侧一栏是文档目录，右侧 980px 居中阅读栏：
+
+- 渲染用 `@bytemd/react` 的 `Viewer`：和编辑器的 `Editor` 同一个包、同一份 `plugins.ts`、同一条 hast 管线，输出就是编辑器预览区那段 `div.markdown-body` —— 两个模式下同一份文档长得一模一样，不必再引一个 markdown 渲染器
+- 目录里的标题**从渲染后的 DOM 里取**（`querySelectorAll('h1,…,h6')`），不自己扫源码：bytemd 自己的侧栏目录就是这么做的。扫源码的话 setext 标题（`===` 下划线那种）、代码块里的 `#`、frontmatter 都得自己照顾一遍；也要注意 `Viewer` 是 `dangerouslySetInnerHTML`，value 一变整块 DOM 重建，标题元素表必须在同一次 layout effect 里重取，不能跨渲染缓存节点。取的还得滤掉 `.sr-only`：脚注插件会给自己补的「Footnotes」小标题挂这个类（见下），那不是文档里的标题
+- 点目录跳转用 `scrollIntoView`，滚动高亮用 rAF 合并的 scroll 监听（取「最后一个越过栏顶」的标题）；滚动发生在正文栏内部，不是整页滚。窄屏（< 1024px）目录整列隐藏，与首页的分组目录一致
+- 高亮有两个位置判断兜不住的坑，各补一条规则：**末尾几节**后面没有足够内容把它们顶到栏顶（正文栏已到底，滚动条到头了），按位置判它们永远点不亮，所以到底时直接认最后一节；用户**点了目录**则那一项说了算，直到用户自己动手滚（解锁认滚轮 / 触屏拖 / 拖滚动条或点正文 / 键盘翻页这四种输入事件）—— 否则点末尾那节，高亮会立刻跳到它后面那一节
+- 条目的缩进按标题层级，**以文档里最浅的那一级为基准**（`paddingLeft` 是 8px + 每深一级 12px）：一份通篇 h2 的文档，h2 就是第一层、不缩进，而不是死按 h1 起算、让整份文档平白缩进一格
+- 空文档（清空 / 拖进一个空文件）给空态：一个「上传 Markdown」按钮加一句提示，不画一版空白正文
+- 两个模式各自 mount、各自持一份 `useFillHeight`：共用一份的话，切模式时 ref 会在元素和 null 之间来回，而 `useFillHeight` 的 effect 依赖 ref 对象（稳定的）不会重跑，量到的高度会停在切走前的旧值
+- `.markdown-body`（github-markdown-css）自带的是一块整画布底色（暗色 `#0d1117`），落在 `--spirit-surface` 的卡片上是一块异色，演示模式里覆盖成透明，并把 45px 的四周留白收成 `28px 40px 72px`。这两条只挂在 `.markdown-render-pane` 作用域下，编辑器里的预览区不受影响
+
+**整窗拖入**（公共层 `src/hooks/useWindowFileDrop.ts`，工具页和首页各挂一份）拖到窗口里任何地方都算数，在工具页里落下来一律**切演示模式**渲染（编辑器自己那个落点因此删掉了，规则只剩一条）：
+
+- 监听挂在 `window` 且用**捕获阶段**：编辑器里的 CodeMirror 自己会处理拖拽，冒泡阶段未必轮得到我们；捕获阶段还能顺手 `preventDefault` 掉浏览器「拿这个文件打开新页面」的默认行为
+- 只认文件拖拽（`dataTransfer.types` 含 `Files`），否则在编辑器里选中一段文字拖动、拖链接都会让遮罩莫名其妙地亮起来
+- 遮罩显示用进出计数维护（dragover / dragleave 会对着子元素反复触发），拖出窗口靠 `relatedTarget === null` 收尾；遮罩是公共组件 `components/DropOverlay.tsx`（`.spirit-drop-overlay`），只做提示、`pointer-events: none`
+- 文件判定看后缀（`isMarkdownLike`，公共层 `src/lib/markdown.ts`：`.md` / `.markdown` / `.mdown` / `.mkd` / `.mkdn` / `.txt`）：macOS 上 `.md` 的 `File.type` 常常是空串，只认 MIME 的话拖进来全被拒。工具页里不是 Markdown 只提示一句，内容与模式都不动
+
+**首页**也认这份拖入（`App.tsx` 的 `Page`）：拖 `.md` 到首页同样直接进 Markdown 演示模式。首页自己不渲染，走 `lib/pendingDocument.ts` 把文件交给工具页，工具页挂载时取一次（模块级变量就够 —— `?tool=` 是 `replaceState`，切页不刷新页面实例）。
+
+- 首页那份实例靠 `enabled` 在工具页打开时关掉：不然窗口上两套监听同时在，工具里拖入会顺带触发首页的「换工具」
+- 首页只认 md，非 md **不拦不提示、只当没发生**。这里有个躲不掉的事实：拖动过程中浏览器只肯说「有文件」，是哪个文件要等 `drop` 才知道，所以想做 md 的投放目标就必然是个「全量投放目标」，非 md 的默认行为一并被吃掉（拖着经过首页时遮罩也会亮）。实测非 md 落上去本来也是原地不动，没有实际损失
+- 收文件后写历史、切演示模式这两件事在工具页那侧做，所以「首页拖入」和「工具里拖入」在历史与呈现上完全一致
 
 原版右上角那排图标里，「全屏」和「GitHub 源码外链」两个被藏掉了（全屏在工具体内没意义，外链会被扩展 CSP 拦）。原版靠 `[bytemd-tippy-path='4'/'5']` 选中它们，这是写死的序号；这里改成 `.bytemd-toolbar-right > .bytemd-toolbar-icon:nth-last-child(-n + 2)` —— 分栏布局有 6 个图标、窄屏 tab 布局只有 4 个，最后两个始终是「全屏」和「源代码」，按序号选会在 tab 布局下藏错。
 
-两个必须手写的样式：
+三个必须手写的样式（漏了都不报错，只是界面坏）：
 
 - `@bytemd/react` 自己不 import 任何 CSS，`bytemd/dist/index.css` 和 `katex/dist/katex.min.css` 都得手动引（原项目是在 `index.less` 里 `@import url(...)`）。漏掉的话编辑器仍然能跑，只是工具栏零内边距、`.bytemd` 撑到 7000+ px 高、颜色全继承站点主题 —— 静态检查看不出来
 - `@bytemd/react` 会多套一层普通 `<div>`，所以 `.bytemd { height: 100% }` 得先让那层也有高度（`.markdown-tool-editor > div { height: 100% }`），否则百分比高度算成 `auto`
+- `.sr-only`：脚注插件（`@bytemd/plugin-gfm` 的 footnotes）给它自己生成的「Footnotes」小标题挂了这个类，指望宿主提供那条规则。而 Tailwind v4 只给**源码里出现过**的类名生成工具类，这个类是运行时由第三方加上去的，源码里从没出现过 —— 规则压根没生成，预览区和演示模式里都会实打实多出一行「Footnotes」（两条入口都中招，静态检查同样看不出来）。这里按 Tailwind 的定义补了一份
 
 暗色适配走站点自己的 `[data-theme='dark']` 覆盖：`.bytemd` / `.bytemd-toolbar` / `.CodeMirror` / `.CodeMirror-gutters` 的底色边框换成 `--spirit-*`，再补一套 `.cm-s-default .cm-*` 的 token 颜色。预览区的 markdown 样式和代码高亮主题（`github-markdown-light` / `vs-*.css` ↔ `github-markdown-dark` / `vs2015`）由 `useColorScheme()` 跟着切换。
 
@@ -226,6 +252,23 @@ CompileError: WebAssembly.instantiateStreaming(): ... violates the following Con
 
 体积：Transform 工具那份 chunk 约 16 KB（gzip 约 5 KB），样式一份 `Transform-*.css` 约 2.5 KB。两个 WASM 与它们的胶水代码只在选中对应转换器时才请求。
 
+## 扩展弹窗
+
+点扩展工具栏图标弹出的小面板（`public/manifest.json` 里 `action.default_popup` → `popup.html`），三块内容：
+
+- **收藏当前页**：读出当前标签页的标题 / 地址 / favicon，选一个分组（下拉里最后一项是「＋ 新建分组…」，配置里一个分组都没有时直接就是这个形态）再点「收藏」，就往那个分组的 `links` 里加一条；地址已经在该分组里时按钮变成「取消收藏」。同一地址在别的分组也收藏过的话，下面给一行「已收藏在「…」，点击切到那个分组」。上次用的分组记在 `chrome.storage.local` 的 `navigator:popup:lastGroup`，关掉再开还是那一组。
+- **工具箱**：和首页工具抽屉共用 `components/ToolList.tsx`，点一项用 `chrome.tabs.create` 打开 `index.html?tool=<key>`，然后自己关掉弹窗。
+- **外观**：主题模式（跟随系统 / 浅色 / 深色）与展示模式（卡片 / 列表），改完写回配置；弹窗自己的配色也跟着立刻换（和首页同一套 `useResolvedTheme` + `--spirit-accent`）。
+- 标题栏右侧两个图标：齿轮开配置面板（`index.html?settings=1`，页面加载后直接展开右侧面板，关掉面板会把地址栏参数抹掉），房子开新标签页；两者都会顺手关掉弹窗。
+
+配置读写直接走首页那一套（`chrome.storage.sync` 分片 + `local` 完整快照 + 内置配置合并）：收藏只是往 `groups[id].links` 里加一条链接，所以跨设备同步、内置配置合并、墓碑、新标签页渲染都不用在这一侧另做一套。判重、地址归一化（去尾斜杠 + 小写后再比）和墓碑收尾都在 `src/config/favorite.ts` 里，是纯函数（`runtime` 从参数传进来），`pnpm check:favorite` 有 12 项断言盯着；「新建分组」的 id 规则与墓碑清理和配置面板那份共用 `src/config/group.ts`。
+
+写入时机的差异：首页那边改动是 300 ms 防抖后落盘，弹窗里每次动作是「先读最新配置 → 改 → 立刻写」，并在弹窗内部串行排队，把互相覆盖的窗口压到最小；但**跨页面没有加锁**，如果弹窗改配置的同时一个刚打开、还带着未落盘改动的导航页也在写，仍可能有一边被覆盖。
+
+读当前页靠 `activeTab`：`permissions` 只加了 `activeTab`，没有加 `tabs`（后者安装时会提示「读取您的浏览历史记录」）。`activeTab` 只在用户真的触发了这个 action 时把当前标签页的 `url` / `title` / `favIconUrl` 临时借给扩展：本机 Chrome 155 无头环境验证过，用扩展自己的 `_execute_action` 键盘命令（和点图标同一类触发）打开弹窗时读得到，而 `chrome.action.openPopup()` 这种非用户触发读不到。读不到时不报错，退化成「页面标题 + 地址」两个手填输入框 —— `pnpm dev` 里直接打开 `popup.html` 也是这个形态（另外，当前页就是导航精灵自己时不给收藏，提示一句即可）。
+
+构建入口只在扩展构建里：`VITE_EXTENSION=1` 时 `rollupOptions.input` 才加上 `popup.html`，GitHub Pages 的网页构建不受影响。`popup.html` 里没有任何内联脚本（MV3 的 `script-src 'self'` 会拦掉），只引 `theme-init.js` 与 `src/extension/popup/main.tsx`；所有 Chrome API 收在 `src/extension/tabs.ts` 一处。
+
 ## 构建为 Chrome 扩展
 
 ```bash
@@ -233,9 +276,13 @@ pnpm install
 pnpm build:extension
 ```
 
-打开 `chrome://extensions` → 开启右上角“开发者模式” → “加载已解压的扩展程序” → 选择项目下的 `dist-extension/` 目录。之后新建标签页就会使用导航精灵。
+打开 `chrome://extensions` → 开启右上角“开发者模式” → “加载已解压的扩展程序” → 选择项目下的 `dist-extension/` 目录。之后新建标签页就会使用导航精灵，工具栏上的扩展图标点开就是上面那个弹窗。
 
-`pnpm build:extension` 会运行类型检查和生产构建，并复制 `public/manifest.json`、`public/service_worker.js` 与图标到 `dist-extension/`。扩展构建固定使用根路径 `/`，不会继承 GitHub Pages 的子路径。
+已经装过旧版本的话，重新构建后要在 `chrome://extensions` 里点一下该扩展的刷新按钮（⟳）才会出现弹窗 —— manifest 变了不会自动重载。弹窗页面只在点开时加载，平时不占着；调试时可以直接把它当普通标签页打开（`chrome-extension://<id>/popup.html`），只是那样没有 `activeTab`，会看到手填形态。
+
+权限只有 `storage`、`bookmarks` 和 `activeTab`：读当前页只借 `activeTab`，没有要 `tabs`（见「扩展弹窗」）。
+
+`pnpm build:extension` 会运行类型检查和生产构建，并复制 `public/manifest.json`、`public/service_worker.js` 与图标到 `dist-extension/`。扩展构建固定使用根路径 `/`，不会继承 GitHub Pages 的子路径；构建脚本还会断言 `manifest.action.default_popup` 指向 `popup.html`、`index.html` 与 `popup.html` 都引到实际产物、且两页都没有内联脚本。
 
 ## 本地开发
 
@@ -311,6 +358,7 @@ pnpm dev              # 本地开发
 pnpm refresh          # 校验并刷新 src/global_runtime.json
 pnpm check            # lint + 各个 check:* 回归脚本（合并规则 / 存储 / 壁纸 / 工具逻辑）+ 配置校验
 pnpm check:tools      # 只跑工具逻辑那份（颜色换算、JSON、AST、Transform 的纯函数与转换器表）
+pnpm check:favorite   # 只跑扩展弹窗的收藏逻辑那份（地址归一化、判重、墓碑、新建分组、合并）
 pnpm build            # 网页构建
 pnpm build:extension  # Chrome 新标签页扩展构建（产物在 dist-extension/）
 ```

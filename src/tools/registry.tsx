@@ -42,7 +42,7 @@ export const TOOLS: ToolEntry[] = [
   {
     key: 'markdown',
     title: 'Markdown',
-    description: '编写 / 预览 / 导入导出 .md / 公式、图表与代码高亮',
+    description: '编辑 + 预览 / 演示模式（目录、拖入渲染）/ 导入导出 .md / 公式、图表与代码高亮',
     icon: <FileMarkdownOutlined />,
     content: lazy(() => import('./Markdown/index.tsx')),
   },

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { ConfigContext } from './configContext.ts'
 import type { ConfigContextValue, ImportMode, ImportPayload, ImportResult } from './configContext.ts'
+import { createGroup } from './group.ts'
 import { createMeta, linkKey, mergeImported, mergeWithRuntime, replacementTombstones } from './merge.ts'
 import type { LocalMeta } from './merge.ts'
 import { RUNTIME_CONFIG } from './runtime.ts'
@@ -187,18 +188,11 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const addGroup = useCallback((title?: string) => {
-    const { groups } = config
-    let index = Object.keys(groups).length + 1
-    while (groups[`group-${index}`]) index += 1
-    const id = `group-${index}`
-    const groupTitle = title?.trim() || `新分组 ${index}`
-    setState((prev) => ({
-      ...prev,
-      config: { ...prev.config, groups: { ...prev.config.groups, [id]: { title: groupTitle, links: [] } } },
-      meta: { ...prev.meta, deletedGroups: prev.meta.deletedGroups.filter((deleted) => deleted !== id) },
-    }))
-    return id
-  }, [config])
+    // id 约定与墓碑清理在 config/group.ts：扩展弹窗的「新建分组并收藏」用的是同一份
+    const created = createGroup(config, meta, title)
+    setState((prev) => ({ ...prev, config: created.config, meta: created.meta }))
+    return created.id
+  }, [config, meta])
 
   const renameGroup = useCallback((groupId: string, title: string) => {
     mutateGroups((groups) => (groups[groupId] ? { ...groups, [groupId]: { ...groups[groupId], title } } : groups))

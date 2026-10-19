@@ -70,6 +70,11 @@ body {
   background-image: radial-gradient(1100px 380px at 50% -140px, color-mix(in srgb, var(--spirit-accent) 16%, transparent), transparent 70%);
 }
 
+/* 扩展弹窗（popup.html）：整块内容就是一层 surface，不铺画布底色，也不留光晕 */
+body.spirit-popup {
+  background: var(--spirit-surface);
+}
+
 /* 壁纸固定铺在最底层，页面结构与卡片仍保持原有层级与可读性 */
 .spirit-wallpaper {
   position: fixed;
@@ -159,4 +164,21 @@ body {
 
 .spirit-scroll::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/*
+ * 整窗拖入文件时的遮罩（首页与 Markdown 工具页共用，见 components/DropOverlay.tsx）。
+ * 铺满窗口是因为拖到哪都算数；pointer-events: none 是为了别把 dragover / drop 从下面那层挡走。
+ */
+.spirit-drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--spirit-accent);
+  background: color-mix(in srgb, var(--spirit-accent) 10%, transparent);
+  color: var(--spirit-text);
+  font-size: 15px;
+  pointer-events: none;
 }

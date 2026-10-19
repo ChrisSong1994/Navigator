@@ -3,7 +3,7 @@
   "name": "导航精灵",
   "description": "支持跨设备同步配置和全局搜索的新标签页导航主页。",
   "version": "0.0.8",
-  "permissions": ["storage", "bookmarks"],
+  "permissions": ["storage", "bookmarks", "activeTab"],
   "host_permissions": [
     "https://www.google.com/*",
     "https://www.google.com.hk/*",
@@ -21,7 +21,8 @@
     "newtab": "index.html"
   },
   "action": {
-    "default_title": "打开导航精灵"
+    "default_title": "导航精灵",
+    "default_popup": "popup.html"
   },
   "icons": {
     "16": "icons/icon16.png",
