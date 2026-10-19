@@ -49,6 +49,8 @@ export interface ToolbarProps {
   popup: boolean
   /** 当前模式（编辑 / 演示），切换按钮在工具栏最左边 */
   mode: MarkdownMode
+  /** 当前文档的源文件名（来自本地文件才有）：保存会问要不要写回它，按钮上说一声 */
+  sourceName: string | null
   onModeChange: (mode: MarkdownMode) => void
   onImport: () => void
   onSave: () => void
@@ -125,7 +127,12 @@ export function Toolbar(props: ToolbarProps) {
 
       <Copy value={props.value} />
       <ToolbarButton title="导入" icon={<UploadOutlined />} onClick={props.onImport} />
-      <ToolbarButton title="保存" icon={<SaveOutlined />} onClick={props.onSave} />
+      {/* 有个源文件就说明白：保存不是「另存为」，而是问你要不要写回磁盘上那份 */}
+      <ToolbarButton
+        title={props.sourceName ? `保存（会问是否写回 ${props.sourceName}）` : '保存'}
+        icon={<SaveOutlined />}
+        onClick={props.onSave}
+      />
 
       <Popover placement="bottomLeft" trigger="click" content={historyList}>
         <Button

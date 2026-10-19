@@ -44,10 +44,13 @@ function cleanHeadingText(text: string | null): string {
 export function MarkdownRender({
   value,
   fileName,
+  emptyReason,
   onUpload,
 }: {
   value: string
   fileName: string | null
+  /** 打开地址栏那份本地文件失败时的说明（见 index.tsx 的 readFailure）：空态说的就不是「还没有文档」了 */
+  emptyReason?: string | null
   /** 空文档时那个「上传 Markdown」按钮，接的是工具栏的导入 */
   onUpload: () => void
 }) {
@@ -149,17 +152,21 @@ export function MarkdownRender({
     headingEls.current[index]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  // 空文档（清空 / 拖进来一个空文件）给空态，不画一版空白正文
+  // 空文档（清空 / 拖进来一个空文件 / 地址栏那份没读出来）给空态，不画一版空白正文。
+  // 后一种情况保留「上传 Markdown」那条退路：文件读不到还能自己选一份进来
   if (!value.trim()) {
     return (
       <div className="markdown-render-root markdown-render-empty" ref={hostRef} style={{ height }}>
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有文档">
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description={emptyReason ? '读不到这份文件' : '还没有文档'}
+        >
           <Button type="primary" icon={<UploadOutlined />} onClick={onUpload}>
             上传 Markdown
           </Button>
         </Empty>
         <p className="markdown-render-empty-hint">
-          也可以把 .md 直接拖进窗口，或从工具栏的历史记录里回填一份
+          {emptyReason ?? '也可以把 .md 直接拖进窗口，或从工具栏的历史记录里回填一份'}
         </p>
       </div>
     )

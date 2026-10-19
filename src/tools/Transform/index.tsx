@@ -137,7 +137,10 @@ const TransformTool = () => {
       if (last && last.key === active.key && last.text === settled.text) return
       lastRecordRef.current = { key: active.key, text: settled.text }
       // 记的是输入而不是输出：输出是输入的纯函数，回填输入才等于「回到当时那一屏」
-      const next = HISTORY.prepend(historyRef.current, active.label, settled.text, Date.now(), active.key)
+      const next = HISTORY.prepend(historyRef.current, active.label, settled.text, {
+        now: Date.now(),
+        meta: active.key,
+      })
       setHistory(next)
       HISTORY.write(next)
     }, HISTORY_SETTLE_MS)

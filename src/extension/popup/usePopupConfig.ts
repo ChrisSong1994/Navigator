@@ -18,7 +18,7 @@ import type { LocalMeta } from '../../config/merge.ts'
 import { RUNTIME_CONFIG } from '../../config/runtime.ts'
 import { DEFAULT_CONFIG } from '../../config/schema.ts'
 import type { NavConfig, NavGroup, NavLink, NavSettings } from '../../config/schema.ts'
-import { loadSnapshot, saveSnapshot } from '../../config/storage.ts'
+import { loadSnapshot, saveSnapshot, SyncWriteError } from '../../config/storage.ts'
 
 /** 一次改动的结果；changed 为 false 表示没什么可改的（分组不存在、已经收藏过……），不用写盘 */
 interface Mutation<T> {
@@ -82,22 +82,35 @@ export function usePopupConfig(): PopupConfigStore {
     }
   }, [readLatest])
 
-  /** 提交一次改动；出错返回 undefined（错误文案进 error） */
+  /**
+   * 提交一次改动；出错返回 undefined（错误文案进 error）。
+   *
+   * saveSnapshot 先写本机完整快照、再写 chrome.storage.sync，所以 SyncWriteError 只代表
+   * 「没同步到云端」，本机已经落盘：这时配置照常应用到界面，只提示一句同步失败。
+   */
   const commit = useCallback(
     async <T,>(mutator: Mutator<T>): Promise<Mutation<T> | undefined> => {
       const task = queueRef.current.then(async () => {
         const merged = await readLatest()
         const next = mutator(merged.config, merged.meta)
-        if (next.changed) await saveSnapshot(next.config, next.meta)
+        let syncError: string | null = null
+        if (next.changed) {
+          try {
+            await saveSnapshot(next.config, next.meta)
+          } catch (reason) {
+            if (!(reason instanceof SyncWriteError)) throw reason
+            syncError = messageOf(reason)
+          }
+        }
         // 没有改动也把刚读到的配置铺到界面上：可能别的窗口刚改过
         setConfig(next.changed ? next.config : merged.config)
-        return next
+        return { next, syncError }
       })
       queueRef.current = task.catch(() => undefined)
       try {
-        const result = await task
-        setError(null)
-        return result
+        const { next, syncError } = await task
+        setError(syncError ? `已保存在本机，但没同步到云端：${syncError}` : null)
+        return next
       } catch (reason) {
         setError(`保存配置失败：${messageOf(reason)}`)
         return undefined

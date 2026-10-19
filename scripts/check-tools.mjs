@@ -8,6 +8,7 @@
  * Transform 那边覆盖的是三个能脱离 WASM 单独测的纯函数（JSON→Go、JSON→MySQL、Kotlin→Java）与转换器表本身。
  */
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import {
   escapeJsonText,
   formatJson,
@@ -17,10 +18,13 @@ import {
   unescapeJsonText,
 } from '../src/tools/Json/lib/json.ts'
 import { addHistoryEntry, removeHistoryEntry } from '../src/lib/history.ts'
-import { isMarkdownLike } from '../src/lib/markdown.ts'
+import { isMarkdownLike, MARKDOWN_EXTENSIONS } from '../src/lib/markdown.ts'
 import { formatTime, isEmpty } from '../src/lib/util.ts'
 import { JSON_FILE_KIND } from '../src/tools/Json/lib/kind.ts'
 import { MARKDOWN_FILE_KIND } from '../src/tools/Markdown/lib/kind.ts'
+import { READ_FILE_HINT, fileNameFromUrl, readUrlDocument } from '../src/tools/Markdown/lib/source.ts'
+import { createSourceHandleStore } from '../src/tools/Markdown/lib/sourceHandle.ts'
+import { pickAndWrite, writeIntoHandle } from '../src/tools/Markdown/lib/writeBack.ts'
 import {
   cmykToRgb,
   derive,
@@ -224,16 +228,16 @@ test('空值判定：null / 空串 / 纯空白算空，0 和 "0" 不算', () => 
 })
 
 test('历史：新记录插最前，同名替换而不是堆两条', () => {
-  const first = addHistoryEntry([], 'a.json', '{"a":1}', 1)
+  const first = addHistoryEntry([], 'a.json', '{"a":1}', { now: 1 })
   assert.equal(first.length, 1)
   assert.equal(first[0].name, 'a.json')
   assert.equal(first[0].content, '{"a":1}')
 
-  const replaced = addHistoryEntry(first, 'a.json', '{"a":2}', 2)
+  const replaced = addHistoryEntry(first, 'a.json', '{"a":2}', { now: 2 })
   assert.equal(replaced.length, 1)
   assert.equal(replaced[0].content, '{"a":2}')
 
-  const appended = addHistoryEntry(replaced, 'b.json', '{}', 3)
+  const appended = addHistoryEntry(replaced, 'b.json', '{}', { now: 3 })
   assert.deepEqual(
     appended.map((item) => item.name),
     ['b.json', 'a.json'],
@@ -242,7 +246,7 @@ test('历史：新记录插最前，同名替换而不是堆两条', () => {
 
 test('历史：超过 20 条从最旧的开始丢', () => {
   let items = []
-  for (let i = 0; i < 25; i += 1) items = addHistoryEntry(items, `${i}.json`, `{"i":${i}}`, i)
+  for (let i = 0; i < 25; i += 1) items = addHistoryEntry(items, `${i}.json`, `{"i":${i}}`, { now: i })
   assert.equal(items.length, 20)
   assert.equal(items[0].name, '24.json')
   assert.equal(items.at(-1).name, '5.json')
@@ -250,20 +254,35 @@ test('历史：超过 20 条从最旧的开始丢', () => {
 
 test('历史：内容超 256KB 只留名字和时间（localStorage 那点配额经不起大文件）', () => {
   const huge = `{"pad":"${'x'.repeat(256 * 1024)}"}`
-  const [item] = addHistoryEntry([], 'big.json', huge, 1)
+  const [item] = addHistoryEntry([], 'big.json', huge, { now: 1 })
   assert.equal(item.content, '')
   assert.equal(item.contentOmitted, true)
   assert.equal(item.name, 'big.json')
 })
 
 test('历史：删除按 id 走，删不存在的 id 不动列表', () => {
-  const items = addHistoryEntry(addHistoryEntry([], 'a.json', '{}', 1), 'b.json', '{}', 2)
+  const items = addHistoryEntry(addHistoryEntry([], 'a.json', '{}', { now: 1 }), 'b.json', '{}', { now: 2 })
   const kept = removeHistoryEntry(items, items[0].id)
   assert.deepEqual(
     kept.map((item) => item.name),
     ['a.json'],
   )
   assert.equal(removeHistoryEntry(items, '没有这个 id').length, 2)
+})
+
+test('历史：源文件地址跟着条目走，同名替换时换成新的那条', () => {
+  // 从本地文件打开的那份记着自己来自哪个文件，回填时才能接着写回它（见 Markdown 工具）
+  const [opened] = addHistoryEntry([], 'a.md', '# a', { now: 1, source: 'file:///tmp/a.md' })
+  assert.equal(opened.source, 'file:///tmp/a.md')
+
+  // 同一份文件再存一次：还是一条，来源跟着换（不然回填的是新内容、写回的却是旧文件）
+  const replaced = addHistoryEntry([opened], 'a.md', '# a v2', { now: 2, source: 'file:///tmp/b.md' })
+  assert.equal(replaced.length, 1)
+  assert.equal(replaced[0].source, 'file:///tmp/b.md')
+
+  // 拖入 / 导入来的没有来源：新条目不该把上一条的地址顺过来
+  const [plain] = addHistoryEntry(replaced, 'a.md', '# a v3', { now: 3 })
+  assert.equal('source' in plain, false)
 })
 
 test('时间格式：补零到 2024-03-05 09:07 这种口径', () => {
@@ -752,6 +771,173 @@ test('整窗拖入：认 md / markdown / txt，后缀大小写都算，别的都
   for (const name of ['a.png', 'a.md.bak', 'md', 'a.pdf', 'a']) {
     assert.equal(isMarkdownLike(file(name)), false, `${name} 不该当 Markdown`)
   }
+})
+
+/* 打开本机的 .md：扩展那头（service worker + manifest）与工具页那头的约定 --------- */
+
+/** 扩展的那几个文件不在 src 里，也不进构建，只能按源码比对（见下面两条用例的注释） */
+const readExtensionFile = (name) =>
+  readFileSync(new URL(`../public/${name}`, import.meta.url), 'utf8')
+
+test('扩展：manifest 要了 file:// 的访问权，service worker 挂上了导航监听', () => {
+  const manifest = JSON.parse(readExtensionFile('manifest.json'))
+  assert.ok(
+    manifest.host_permissions.includes('file:///*'),
+    '没有 file:///* 就既看不见本地文件的导航、也读不到正文（只有 tabs 权限只能看见、读不到）',
+  )
+  assert.equal(manifest.background.service_worker, 'service_worker.js')
+
+  const worker = readExtensionFile('service_worker.js')
+  assert.match(worker, /chrome\.tabs\.onUpdated\.addListener/, 'service worker 里没有导航监听')
+  // 换页地址的形状是这头和工具页之间的约定：?tool= 认出工具，?file= 认出读哪份文件
+  assert.match(worker, /index\.html\?tool=markdown&file=/, '换页地址和工具页的约定对不上')
+})
+
+test('扩展：service worker 的后缀表和 src/lib/markdown.ts 一份（两边各写一份、会漂）', () => {
+  const worker = readExtensionFile('service_worker.js')
+  const declared = worker.match(/const MARKDOWN_RE = \/\\\.\(([^)]+)\)\$\/i/)
+  assert.ok(declared, 'service_worker.js 里找不到 MARKDOWN_RE —— 正则改了写法就得同步改这条断言')
+
+  const suffixes = declared[1].split('|').map((ext) => `.${ext}`)
+  assert.deepEqual(
+    [...suffixes].sort(),
+    [...MARKDOWN_EXTENSIONS].sort(),
+    '后缀表漂了：service worker 拦下的和工具认的不是同一批后缀',
+  )
+
+  // 判定本身也走一遍：只看地址结尾，`a.md.bak` / `md` 这种不算文档
+  const isDocument = (path) => new RegExp(`\\.(${declared[1]})$`, 'i').test(path)
+  assert.equal(isDocument('/Users/me/53%20%E8%AE%BE%E8%AE%A1.md'), true)
+  assert.equal(isDocument('/Users/me/README.TXT'), true)
+  assert.equal(isDocument('/Users/me/md'), false)
+  assert.equal(isDocument('/Users/me/a.md.bak'), false)
+  assert.equal(isDocument('/Users/me/a.png'), false)
+})
+
+test('本地文件：文件名从地址里取，带百分号转义的还原回来', () => {
+  assert.equal(fileNameFromUrl('file:///Users/me/notes.md'), 'notes.md')
+  // 用户的例子：地址里是 53%20WizBuild%20…，读出来的文件名得是能看的那个
+  assert.equal(
+    fileNameFromUrl('file:///tmp/docs/53%20WizBuild%20%E8%AE%BE%E8%AE%A1.md'),
+    '53 WizBuild 设计.md',
+  )
+  // 查询串 / 锚点不算文件名的一部分
+  assert.equal(fileNameFromUrl('file:///tmp/a.md?v=2'), 'a.md')
+  // 坏转义（半截的 %E8）与取不出名字的情况都不抛异常，给个兜底
+  assert.equal(fileNameFromUrl('file:///tmp/%E8.md'), '%E8.md')
+  assert.equal(fileNameFromUrl('file:///'), '未命名文档')
+  assert.equal(fileNameFromUrl(''), '未命名文档')
+})
+
+testAsync('本地文件：只认 file://，别让它变成扩展的通用取数口子', async () => {
+  // 这个参数本来是扩展自己挂上去的，但地址栏手改一个出来也不该让扩展页面去取别的地址
+  await assert.rejects(() => readUrlDocument('https://example.com/a.md'), /只打开本机文件/)
+  await assert.rejects(() => readUrlDocument('不是个地址'), /读不了/)
+
+  // 读不到时那句提示得指到该改的地方（扩展详情里的开关），不然用户没处下手
+  assert.match(READ_FILE_HINT, /允许访问文件网址/)
+})
+
+/* 写回源文件：浏览器里没有「按路径写文件」这回事 ----------------------------- */
+
+/**
+ * 假句柄，形状照 FileSystemFileHandle 摆：记下写进来的内容，权限和报错都按参数给。
+ * 文件被删时 Chrome 是在 createWritable 那一步抛 NotFoundError（没打开就没有 write 可谈），
+ * 所以这里也跟着分两步抛。
+ */
+function fakeHandle(name, { permission = 'granted', fail = null } = {}) {
+  const written = []
+  return {
+    handle: {
+      name,
+      queryPermission: async () => permission,
+      requestPermission: async () => permission,
+      createWritable: async () => {
+        if (fail?.name === 'NotFoundError') throw fail
+        return {
+          write: async (content) => {
+            if (fail) throw fail
+            written.push(content)
+          },
+          close: async () => {},
+        }
+      },
+    },
+    written,
+  }
+}
+
+/** 系统保存框是浏览器 API，node 里临时挂一个假的顶上，跑完还回去 */
+async function withSavePicker(picker, run) {
+  const previous = globalThis.window
+  globalThis.window = { showSaveFilePicker: picker }
+  try {
+    return await run()
+  } finally {
+    globalThis.window = previous
+  }
+}
+
+testAsync('写回源文件：权限、文件没了、写失败要分开——改走另存为还是说清原因', async () => {
+  // 手上记着句柄（第一次那一下已经过了）：直接写，不再弹框
+  const ok = fakeHandle('a.md')
+  const written = await writeIntoHandle(ok.handle, '# v2')
+  assert.equal(written.status, 'written')
+  assert.equal(written.name, 'a.md')
+  assert.deepEqual(ok.written, ['# v2'])
+
+  // 写权限没给：句柄作废，调用方该忘掉它并改用另存为
+  const denied = fakeHandle('a.md', { permission: 'denied' })
+  assert.equal((await writeIntoHandle(denied.handle, '# v2')).status, 'blocked')
+  assert.deepEqual(denied.written, [], '没权限就一个字节都不该写')
+
+  // 文件被删 / 挪走：句柄同样废了
+  const missing = new Error('文件不在了')
+  missing.name = 'NotFoundError'
+  const gone = fakeHandle('a.md', { fail: missing })
+  assert.equal((await writeIntoHandle(gone.handle, '# v2')).status, 'blocked')
+
+  // 别的错（磁盘满了之类）：这次没写成，但句柄还能用，别乱丢，把原因说出来
+  const failed = await writeIntoHandle(fakeHandle('a.md', { fail: new Error('磁盘满了') }).handle, '# v2')
+  assert.equal(failed.status, 'failed')
+  assert.match(failed.reason, /磁盘满了/)
+})
+
+testAsync('写回源文件：第一次要靠系统框选定文件，取消与不支持都得与「写成了」分开', async () => {
+  const { handle, written } = fakeHandle('a.md')
+  const picked = await withSavePicker(async () => handle, () => pickAndWrite('# hi', 'a.md'))
+  assert.equal(picked.status, 'written')
+  assert.equal(picked.name, 'a.md')
+  assert.deepEqual(written, ['# hi'])
+
+  // 用户点了取消：什么都不该发生，也不该报「已保存」
+  const abort = () => {
+    const error = new Error('用户取消')
+    error.name = 'AbortError'
+    throw error
+  }
+  assert.equal((await withSavePicker(abort, () => pickAndWrite('# hi', 'a.md'))).status, 'cancelled')
+
+  // 浏览器没有这套 API（Firefox）：窗口在、方法不在，跟用户取消是两回事
+  const unsupported = await withSavePicker(undefined, () => pickAndWrite('# hi', 'a.md'))
+  assert.equal(unsupported.status, 'unsupported')
+})
+
+testAsync('源文件句柄：内存那份先认，忘掉之后就当没记过', async () => {
+  // node 里没有 IndexedDB：这一层读不到也写不进（当没有记性），内存那层照常工作
+  const store = createSourceHandleStore()
+  const { handle } = fakeHandle('a.md')
+
+  await store.preload('file:///tmp/a.md')
+  assert.equal(store.peek('file:///tmp/a.md'), null)
+
+  store.remember('file:///tmp/a.md', handle)
+  assert.equal(store.peek('file:///tmp/a.md'), handle)
+  // 只认这一份：别的文件没有句柄，写回时该重新弹一次系统框
+  assert.equal(store.peek('file:///tmp/b.md'), null)
+
+  store.forget('file:///tmp/a.md')
+  assert.equal(store.peek('file:///tmp/a.md'), null)
 })
 
 // --- Transform：JSON / YAML / JS Object 互转 ---------------------------------

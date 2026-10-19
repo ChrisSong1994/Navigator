@@ -94,6 +94,36 @@ declare global {
 }
 
 /**
+ * 弹一次系统保存框，拿到可写的文件句柄。三种结果要分得清：
+ * 用户点了取消（null）、浏览器没这个 API（undefined）、选中了文件（句柄）。
+ *
+ * 之所以单独开出来：除了保存，Markdown 那边「写回源文件」也要拿到句柄才能写
+ * （浏览器里没有按路径写文件这回事，见 tools/Markdown/lib/writeBack.ts）。
+ */
+export async function pickSaveHandle(
+  suggestedName: string,
+  kind: TextFileKind,
+): Promise<FileSystemFileHandle | null | undefined> {
+  if (typeof window.showSaveFilePicker !== 'function') return undefined
+  try {
+    return await window.showSaveFilePicker({
+      suggestedName,
+      types: [
+        {
+          description: kind.description,
+          accept: { [kind.mime]: [kind.extension] },
+        },
+      ],
+    })
+  } catch (error) {
+    // 取消就是取消：既不该走下载，也不该写历史
+    if (isAbort(error)) return null
+    // 别的情况（比如权限策略拦下了）当没这个 API，让调用方落下去走下载
+    return undefined
+  }
+}
+
+/**
  * 保存成文件。优先用系统保存框（能拿到用户取的名字，正好记进历史）；
  * 用户点了取消就返回 null（不写历史）；不支持这个 API 就退到下载，用建议名记历史。
  */
@@ -102,25 +132,18 @@ export async function saveTextFile(
   suggestedName: string,
   kind: TextFileKind,
 ): Promise<SavedFile | null> {
-  if (typeof window.showSaveFilePicker === 'function') {
+  const handle = await pickSaveHandle(suggestedName, kind)
+  if (handle) {
     try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName,
-        types: [
-          {
-            description: kind.description,
-            accept: { [kind.mime]: [kind.extension] },
-          },
-        ],
-      })
       const writable = await handle.createWritable()
       await writable.write(content)
       await writable.close()
       return { name: handle.name }
-    } catch (error) {
-      if (isAbort(error)) return null
-      // 别的情况（比如权限策略拦下了）落下去走下载
+    } catch {
+      // 写到一半失败：不当作已保存，落下去走下载
     }
+  } else if (handle === null) {
+    return null
   }
 
   downloadText(content, suggestedName, kind.mime)

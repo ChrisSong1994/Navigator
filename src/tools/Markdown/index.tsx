@@ -9,8 +9,10 @@
  * 5、历史记录（存内容，两个模式共用同一份，点一下回填；原项目没有）
  * 6、弹出到独立窗口 + 双向同步（原项目没有）
  * 7、亮 / 暗两套主题（原项目固定亮色）
+ * 8、浏览器里打开本机的 .md：扩展把那个 file:// 导航换成 ?file= 落到这里（见 lib/source.ts）
+ * 9、编辑这份文件之后保存，问一句要不要写回它（见 lib/writeBack.ts 与 lib/sourceHandle.ts）
  *
- * 状态都留在这里：两个模式拿到的是同一份 value / fileName / history，切模式只是换个视图。
+ * 状态都留在这里：两个模式拿到的是同一份 value / fileName / history / source，切模式只是换个视图。
  */
 import { message } from 'antd'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -23,17 +25,25 @@ import { clearPendingDocument, peekPendingDocument } from '../../lib/pendingDocu
 import { createBridge, isPopupPage, openToolPopup } from '../../lib/popup.ts'
 import { useColorScheme } from '../../hooks/useColorScheme.ts'
 import { useWindowFileDrop } from '../../hooks/useWindowFileDrop.ts'
+import { clearFileQuery, fileFromQuery } from '../query.ts'
 import { MarkdownEditor } from './MarkdownEditor.tsx'
 import { MarkdownRender } from './MarkdownRender.tsx'
+import { SaveSourceModal } from './components/SaveSourceModal.tsx'
 import { Toolbar } from './components/Toolbar.tsx'
 import { useThemeStylesheets } from './hooks/useThemeStylesheets.ts'
 import { MARKDOWN_FILE_KIND } from './lib/kind.ts'
 import type { MarkdownMode } from './lib/mode.ts'
+import { fileNameFromUrl, READ_FILE_HINT, readUrlDocument } from './lib/source.ts'
+import { createSourceHandleStore } from './lib/sourceHandle.ts'
+import { pickAndWrite, writeIntoHandle } from './lib/writeBack.ts'
 import SAMPLE from './sample.md?raw'
 import './Markdown.css'
 
 /** 本工具在公共层里的身份：历史存哪儿、弹窗叫什么（文件类型见 lib/kind.ts） */
 const HISTORY = createHistoryStore('navigator.markdown.history')
+
+/** 记住哪个 file:// 地址是磁盘上的哪个文件，写回源文件时用（见 lib/sourceHandle.ts） */
+const SOURCES = createSourceHandleStore()
 
 const POPUP = {
   windowName: 'navigator-markdown-popup',
@@ -43,6 +53,18 @@ const POPUP = {
   height: 860,
 } as const
 
+/** openDocument 的可选项，默认值是「把这份文档当新文档读进来」 */
+interface OpenOptions {
+  /** 记进历史。历史回填时不用：它本来就在历史里 */
+  remember?: boolean
+  /** 读完切到演示模式（拖入 / 地址栏打开都算「我要看这份文档」） */
+  render?: boolean
+  /** 留着地址栏那个 `?file=`（只有它自己读出来的那份才留） */
+  keepQuery?: boolean
+  /** 这份文档的来源文件地址；没有来源就传空 */
+  source?: string | null
+}
+
 const MarkdownTool = () => {
   /*
    * 首页拖入交接过来的那份文档（见 lib/pendingDocument.ts）。首页自己不做渲染，把工具页打开就算完事，
@@ -51,14 +73,30 @@ const MarkdownTool = () => {
    */
   const [handoff] = useState(peekPendingDocument)
 
-  const [value, setValue] = useState(handoff?.content ?? SAMPLE)
+  /*
+   * 地址栏 ?file= 送来的那份本地文档（扩展换过来的导航，见 lib/source.ts）。它和上面那份交接不会
+   * 同时出现：首页拖入走的是页面内 replaceState，不会带上这个参数。
+   * 正文要等读完才有，所以先按演示模式摆空态，读完再当一份普通文档装进去。
+   */
+  const [fileAddress] = useState(() => (handoff ? null : fileFromQuery()))
+  /** 读不到地址栏那份文件时的说明，落在演示模式的空态里（见 MarkdownRender 的 emptyReason） */
+  const [readFailure, setReadFailure] = useState<string | null>(null)
+
+  const [value, setValue] = useState(handoff?.content ?? (fileAddress ? '' : SAMPLE))
   const [currentFileName, setCurrentFileName] = useState<string | null>(handoff?.name ?? null)
+  /**
+   * 当前这份文档来自哪个本地文件（`file://` 地址）。有它「保存」才谈得上写回源文件；换成别的
+   * 来源（拖入 / 导入 / 另存为）就没了。它跟着历史走，从历史里回填时也会一起回来。
+   */
+  const [source, setSource] = useState<string | null>(null)
+  /** 「要写回源文件吗」那个确认框开着没有 */
+  const [confirmSave, setConfirmSave] = useState(false)
   // 交接过来这份也算一条历史；HISTORY.add 只做纯计算，落盘同样在 effect 里
   const [history, setHistory] = useState<HistoryItem[]>(() =>
     handoff ? HISTORY.add(HISTORY.read(), handoff.name, handoff.content) : HISTORY.read(),
   )
-  /** 打开工具默认编辑模式；整窗拖入（含首页交接）会自动切到演示模式 */
-  const [mode, setMode] = useState<MarkdownMode>(handoff ? 'view' : 'edit')
+  /** 打开工具默认编辑模式；整窗拖入（含首页交接）与地址栏那份会自动切到演示模式 */
+  const [mode, setMode] = useState<MarkdownMode>(handoff || fileAddress ? 'view' : 'edit')
   // 地址栏带 popup=1 就是那个被弹出来的窗口：工具栏最后一位换成「同步到主窗口」
   const [popup] = useState(isPopupPage)
 
@@ -80,21 +118,62 @@ const MarkdownTool = () => {
   }
 
   /**
-   * 换一份文档进来。三条入口共用这一个：
+   * 换一份文档进来。四个入口共用这一个：
    *
    * - 整窗拖入：记历史 + 切演示模式（拖进来就是要看这份文档）
    * - 导入 / 演示模式的上传：记历史，模式不动（「读进当前模式」）
-   * - 历史回填：不写历史（它本来就在历史里），模式也不动
+   * - 历史回填：不写历史（它本来就在历史里），模式也不动，但源文件地址要跟着回填
+   * - 地址栏送来的本地文件：同拖入，只是得留着地址栏那个参数（keepQuery），并且记下源文件
+   *
+   * `source` 是这份文档的来源地址：只有本地文件有（拖进来的 File 对象拿不到路径，
+   * 见 lib/file.ts），所以别的入口一律传空。
    */
   const openDocument = (
     file: { name: string; content: string },
-    { remember = true, render = false } = {},
+    { remember = true, render = false, keepQuery = false, source = null }: OpenOptions = {},
   ) => {
     setValue(file.content)
     setCurrentFileName(file.name)
-    if (remember) rememberHistory(HISTORY.add(history, file.name, file.content))
+    setSource(source)
+    // 有源文件就先把它记着的句柄捞进内存，一会儿「保存」要同步判断在不在手上
+    if (source) void SOURCES.preload(source)
+    if (remember) {
+      rememberHistory(HISTORY.add(history, file.name, file.content, { source: source ?? undefined }))
+    }
     if (render) setMode('view')
+    setReadFailure(null)
+    // 现在开着的是另一份文档了，地址栏那个 ?file= 作废 —— 留着的话「返回首页」再点进本工具
+    // 又会把那份文件读一遍。只有它自己读出来的那份留着，刷新页面才能看到磁盘上的新版
+    if (!keepQuery) clearFileQuery()
   }
+
+  // 读 ?file= 那个 effect 要用 openDocument，可它每次渲染都是新的（进依赖会把这份文件读个没完），
+  // 所以和下面弹窗那座桥一样，走 ref 读最新那个
+  const openRef = useRef(openDocument)
+  useEffect(() => {
+    openRef.current = openDocument
+  })
+
+  // 地址栏那份本地文档：读进来就是一份普通文档（写历史 + 切演示模式），所以和拖入共用 openDocument。
+  // 读不到就在空态里说清怎么办 —— 页面已经跳过来了，让用户对着「还没有文档」发愣没有意义
+  useEffect(() => {
+    if (!fileAddress) return
+    let alive = true
+    // 坐落之前再看看地址栏：用户中途自己换了文档的话（openDocument 会把那个参数摘掉），
+    // 这份慢腾腾读回来的就不该把用户刚挑的那份盖回去
+    const wanted = () => alive && fileFromQuery() === fileAddress
+    readUrlDocument(fileAddress).then(
+      (file) => {
+        if (wanted()) openRef.current(file, { render: true, keepQuery: true, source: fileAddress })
+      },
+      () => {
+        if (wanted()) setReadFailure(READ_FILE_HINT)
+      },
+    )
+    return () => {
+      alive = false
+    }
+  }, [fileAddress])
 
   const handleImport = async () => {
     const picked = await pickTextFile(MARKDOWN_FILE_KIND.accept)
@@ -102,21 +181,78 @@ const MarkdownTool = () => {
     openDocument(picked)
   }
 
-  const handleSave = async () => {
+  /**
+   * 另存为 / 没有来源时的普通保存：都是「过一个系统保存框挑个文件写进去」。
+   * 存完这份文档就归新文件了 —— 原来那个源文件不再是「这份文档的来源」，别再问要不要写回它。
+   */
+  const saveAsNewFile = async () => {
     const saved = await saveTextFile(value, currentFileName ?? 'Untitled.md', MARKDOWN_FILE_KIND)
     if (!saved) return
     setCurrentFileName(saved.name)
+    setSource(null)
     rememberHistory(HISTORY.add(history, saved.name, value))
+  }
+
+  const handleSave = () => {
+    // 从本地文件打开的那份：先问一句。浏览器里写回要用户选定文件，问清楚了才不显得莫名其妙
+    if (source) {
+      setConfirmSave(true)
+      return
+    }
+    void saveAsNewFile()
+  }
+
+  const closeConfirmSave = () => setConfirmSave(false)
+
+  /** 写回源文件：手上有句柄就直接写，没有就先弹一次系统保存框把它拿到手（见 lib/writeBack.ts） */
+  const writeBackToSource = async () => {
+    const url = source
+    if (!url) return
+    const known = SOURCES.peek(url)
+    const result = known
+      ? await writeIntoHandle(known, value)
+      : await pickAndWrite(value, fileNameFromUrl(url))
+
+    if (result.status === 'cancelled') return
+
+    if (result.status === 'unsupported') {
+      message.warning('这个浏览器不能写回本地文件，改用「另存为…」')
+      await saveAsNewFile()
+      return
+    }
+
+    if (result.status === 'blocked') {
+      // 文件被删 / 挪走 / 权限没给：句柄废了，忘掉它下次好重新选
+      SOURCES.forget(url)
+      message.warning('这个文件写不进去了（可能被删掉、挪走了），改用「另存为…」存一份吧')
+      return
+    }
+
+    if (result.status === 'failed') {
+      message.error(`写回失败：${result.reason}`)
+      return
+    }
+
+    // 写回成功。句柄可能刚拿到（第一次），也可能换了另一个文件，都记到这份来源地址上
+    SOURCES.remember(url, result.handle)
+    setCurrentFileName(result.name)
+    rememberHistory(HISTORY.add(history, result.name, value, { source: url }))
+    message.success(`已写回 ${result.name}`)
   }
 
   const handleClear = () => {
     setValue('')
     setCurrentFileName(null)
+    // 地址栏那份也不要了，不然一刷新它又回来
+    setReadFailure(null)
+    setSource(null)
+    clearFileQuery()
   }
 
   const handlePickHistory = (item: HistoryItem) => {
     if (item.contentOmitted) return
-    openDocument({ name: item.name, content: item.content }, { remember: false })
+    // 历史里带着源文件地址（当初打开它的那个 file://），回填时一起回来
+    openDocument({ name: item.name, content: item.content }, { remember: false, source: item.source })
   }
 
   const handleDeleteHistory = (item: HistoryItem) => {
@@ -185,9 +321,10 @@ const MarkdownTool = () => {
         history={history}
         popup={popup}
         mode={mode}
+        sourceName={source ? fileNameFromUrl(source) : null}
         onModeChange={setMode}
         onImport={() => void handleImport()}
-        onSave={() => void handleSave()}
+        onSave={handleSave}
         onClear={handleClear}
         onPickHistory={handlePickHistory}
         onDeleteHistory={handleDeleteHistory}
@@ -202,11 +339,28 @@ const MarkdownTool = () => {
         <MarkdownRender
           value={value}
           fileName={currentFileName}
+          emptyReason={readFailure}
           onUpload={() => void handleImport()}
         />
       )}
 
       {dragging ? <DropOverlay text="松开就渲染这份文档" /> : null}
+
+      {confirmSave && source ? (
+        <SaveSourceModal
+          url={source}
+          cached={SOURCES.peek(source) !== null}
+          onWriteBack={() => {
+            closeConfirmSave()
+            void writeBackToSource()
+          }}
+          onSaveAs={() => {
+            closeConfirmSave()
+            void saveAsNewFile()
+          }}
+          onCancel={closeConfirmSave}
+        />
+      ) : null}
     </div>
   )
 }

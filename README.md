@@ -14,7 +14,7 @@
 - Bing 壁纸：关闭、从最近 8 天中选取、按间隔自动轮播、自定义图片地址；配置里只持久化一个图片直链
 - Chrome 书签双向同步：手动从书签栏 /「导航精灵」拉取，或把当前配置推送 / 覆盖到书签栏下的「导航精灵」文件夹
 - 数据导入导出：标准配置 JSON，以及 Chrome 书签 HTML
-- 工具箱：顶栏入口弹出工具抽屉，选中后整页打开该工具，左上角返回箭头回首页；目前有颜色工具（取色面板、HEX / RGB / CMYK / HSV / HSL 互转、颜色记录）、JSON 工具（格式化 / 压缩 / 校验并给出行列与出错片段 / 修复 / JSON5 兼容解析 / 转义与去转义 / 上传下载）、Markdown 工具（编辑 + 预览、演示模式（左侧目录、拖入 .md 即渲染）、GFM、公式、图表、代码高亮、导入导出 .md）、AST 工具（JS / TS、JSON、YAML 三种语言转 AST，树与 JSON 两种视图，悬停联动源码高亮）和 Transform 工具（JSON / YAML / JavaScript 对象互转 TypeScript、Go、Java、Kotlin、MySQL、JSON Schema），工具界面按需懒加载
+- 工具箱：顶栏入口弹出工具抽屉，选中后整页打开该工具，左上角返回箭头回首页；目前有颜色工具（取色面板、HEX / RGB / CMYK / HSV / HSL 互转、颜色记录）、JSON 工具（格式化 / 压缩 / 校验并给出行列与出错片段 / 修复 / JSON5 兼容解析 / 转义与去转义 / 上传下载）、Markdown 工具（编辑 + 预览、演示模式（左侧目录、拖入 .md 即渲染、浏览器里打开本机 .md 也落在这里）、GFM、公式、图表、代码高亮、导入导出 .md、保存时可写回源文件）、AST 工具（JS / TS、JSON、YAML 三种语言转 AST，树与 JSON 两种视图，悬停联动源码高亮）和 Transform 工具（JSON / YAML / JavaScript 对象互转 TypeScript、Go、Java、Kotlin、MySQL、JSON Schema），工具界面按需懒加载
 - 扩展弹窗：点扩展图标弹出「收藏当前页 + 工具列表 + 外观开关」，收藏时挑分组（或就地新建）直接写进配置，主题模式 / 展示模式一键切换
 
 ## 数据流
@@ -77,10 +77,10 @@ chrome_bookmarks_demo.html ──pnpm import:bookmarks──▶ global_original.
 
 ## 配置同步
 
-- 扩展环境使用 `chrome.storage.sync`，整份配置与合并记账（墓碑等）都会同步；由于单 key 有 8 KB 限制，会自动拆成多个分片。
-- `chrome.storage.local` 保存同设备的完整快照，sync 暂时不可用或分片写入中断时作为兜底。
+- 扩展环境使用 `chrome.storage.sync`，整份配置与合并记账（墓碑等）都会同步；由于单 key 有 8 KB 限制，会自动拆成多个分片。Chrome 实际按「key + `JSON.stringify(value)` 的 UTF-8 字节」计这一项，**JSON 转义也算**（引号 / 反斜杠翻倍，控制字符最多 6 字节），所以分片是按转义后的字节切的；按原始文本切会出现「看着没到 8 KB、写入却报 `kQuotaBytesPerItem`」。
+- `chrome.storage.local` 保存同设备的完整快照，sync 暂时不可用、分片写入中断或 localStorage 被清掉时作为兜底（读取时先 `JSON.parse` 再校验）。
 - 普通 `pnpm dev` / 非扩展网页环境自动回退到 `localStorage`，方便本地开发。
-- `chrome.storage.sync` 总配额约 100 KB，且浏览器可能按设备 / 登录状态产生延迟；不建议在配置里放大量 base64 图片。配置面板上传时可取消“保留 base64 图标”。
+- `chrome.storage.sync` 总配额约 100 KB（分片 + manifest 合计），且浏览器可能按设备 / 登录状态产生延迟；不建议在配置里放大量 base64 图片。配置面板上传时可取消“保留 base64 图标”。超过总量时本机快照照常保存，弹窗 / 配置面板会提示「已保存在本机，但没同步到云端」，而不是把这次收藏整个失败。
 - Chrome 书签只是手动双向同步入口，完整配置、外观设置和合并元数据仍以 `chrome.storage.sync` 为准。
 
 ## 搜索
@@ -134,7 +134,7 @@ chrome_bookmarks_demo.html ──pnpm import:bookmarks──▶ global_original.
 - 左编辑右预览（bytemd，底层 CodeMirror 5），预览支持 GFM：表格、任务列表、脚注、`~~删除线~~`、gemoji（`:thumbsup:` → 👍）、自动链接
 - 公式（KaTeX）、图表（mermaid）、代码块高亮（highlight.js），都随预览即时渲染
 - 工具栏（左边一排）：编辑 / 演示切换、复制、导入 `.md`、保存 / 导出 `.md`（优先 `showSaveFilePicker`，取消就当没发生）、历史记录、弹出到独立窗口、清除
-- 历史记录：最多 20 条存在 localStorage（`navigator.markdown.history`，拖入 / 上传 / 保存时各记一条，内容超过 256 KB 只留名字和时间），点一条回填；编辑与演示两个模式共用这一份
+- 历史记录：最多 20 条存在 localStorage（`navigator.markdown.history`，拖入 / 上传 / 保存时各记一条，内容超过 256 KB 只留名字和时间），点一条回填；编辑与演示两个模式共用这一份。从本地文件打开的那份还会在条目里记下它的 `file://` 地址（`source` 字段），回填之后「保存」照样能问一句要不要写回那个文件
 - 弹出到独立窗口：`window.open` 开 `/?tool=markdown&popup=1`，两个窗口用 BroadcastChannel 双向同步内容；弹窗里那个按钮变成「同步到主窗口」
 - 拖拽 `.md` 文件到窗口（不只编辑器那一块）直接载入，并自动切到演示模式（见下）
 - bytemd 自带的那排右侧图标（目录、帮助、仅编辑区 / 仅预览区）留在原地，分栏 ↔ 单栏由它切换
@@ -162,6 +162,20 @@ chrome_bookmarks_demo.html ──pnpm import:bookmarks──▶ global_original.
 - 首页那份实例靠 `enabled` 在工具页打开时关掉：不然窗口上两套监听同时在，工具里拖入会顺带触发首页的「换工具」
 - 首页只认 md，非 md **不拦不提示、只当没发生**。这里有个躲不掉的事实：拖动过程中浏览器只肯说「有文件」，是哪个文件要等 `drop` 才知道，所以想做 md 的投放目标就必然是个「全量投放目标」，非 md 的默认行为一并被吃掉（拖着经过首页时遮罩也会亮）。实测非 md 落上去本来也是原地不动，没有实际损失
 - 收文件后写历史、切演示模式这两件事在工具页那侧做，所以「首页拖入」和「工具里拖入」在历史与呈现上完全一致
+
+**浏览器里打开本机的 `.md`**（扩展）：在地址栏敲 `file:///…/x.md`，或者双击一个 `.md` 让浏览器打开，都会落到工具的**演示模式**，而不是让 Chrome 显示那一段纯文本。
+
+- 换页在 `public/service_worker.js` 里做：`chrome.tabs.onUpdated` 看到 `file://` 且路径后缀是 Markdown（后缀表要和 `src/lib/markdown.ts` 的 `MARKDOWN_EXTENSIONS` 一致，service worker 是纯 JS 进不了构建，只能靠 `scripts/check-tools.mjs` 比对两份表）就 `chrome.tabs.update` 换成本扩展的 `index.html?tool=markdown&file=<原文地址>`。只看 `URL.pathname`，地址里的查询串、锚点不算后缀
+- 只截 `file://`，http(s) 的 `.md` 不管：公网那份可能根本不是文本（也可能很大），得先下载、认得、再决定，不值当
+- 正文不由 service worker 读，而是工具页拿着 `?file=` 自己 `fetch(file://…)`（`src/tools/Markdown/lib/source.ts`），读完当一份普通文档装进去（写历史、切演示模式，与拖入同一条路）。代价是 manifest 得要 `host_permissions: ["file:///*"]` —— 光有它就能看见导航、也能读正文，`tabs` 权限做不到后者。**已经装过的扩展要重新加载一次**（`host_permissions` 变了），并且扩展详情里「允许访问文件网址」得是开的；Chrome 在 manifest 声明了 `file:///*` 时会自己把它打开。读不到就照常落在那个标签页上，空态里说清是哪个开关（`READ_FILE_HINT`）
+- 扩展不给页面文件路径，所以「这份文档来自哪个文件」只能靠这个地址记着；拖进来的 `File` 对象连地址都没有（`dataTransfer.files` 里没有路径），那份也就无从写回
+
+**写回源文件**：从本地文件打开的那份，编辑完按「保存」不再默默另存为，而是先问一句（`components/SaveSourceModal.tsx`：写回源文件 / 另存为… / 取消），工具栏那个保存按钮的提示也会写上「会问是否写回 x.md」。
+
+- 浏览器里没有「按路径写文件」这回事：`fetch(file://…, { method: 'PUT' })` **返回 200 但磁盘上一个字节都没动**（试过），`chrome.downloads` 只认相对路径、也拿不到句柄。能写的只有 `FileSystemFileHandle`，而句柄只能从系统保存框里拿到 —— 也就是用户在那一刻亲眼选定了哪个文件。所以第一次写回必然要多一个系统框，弹窗里那句话就是为了不让人莫名其妙
+- 句柄可以存进 IndexedDB（结构化克隆认它），于是同一份文件只有第一次要过系统框，之后点「写回源文件」直接写，最多 Chrome 再问一次「允许写入」（`queryPermission` 不给就 `requestPermission`）。跨会话的记性在 `src/tools/Markdown/lib/sourceHandle.ts`，键是那个 `file://` 地址；另外在内存里留一份，因为点保存那一瞬间要**同步**判断有没有句柄（这句话决定弹窗里那句提示写什么），而系统框本身也要求用户手势，中间不该夹一次 IndexedDB 读 —— 打开文档时先 `preload` 好
+- 写回失败要分得清（`lib/writeBack.ts`）：用户取消 → 什么都不做也不吭声；`NotFoundError` / `NotAllowedError` / `SecurityError` → 句柄废了（文件被删、挪走、权限被收回），忘掉它并让用户改用另存为；其它错误 → 这次没写成，但句柄还能用，别乱丢，把原因说出来。浏览器没有这套 API（Firefox）→ 说一声然后走另存为
+- 「另存为…」走的是同一个系统框，只是存完这份文档就归新文件了：源文件地址清掉，别再问要不要写回旧的那个。存到哪儿浏览器同样不告诉页面，所以那个新文件不会变成新的源（同会话里也得再选一次）
 
 原版右上角那排图标里，「全屏」和「GitHub 源码外链」两个被藏掉了（全屏在工具体内没意义，外链会被扩展 CSP 拦）。原版靠 `[bytemd-tippy-path='4'/'5']` 选中它们，这是写死的序号；这里改成 `.bytemd-toolbar-right > .bytemd-toolbar-icon:nth-last-child(-n + 2)` —— 分栏布局有 6 个图标、窄屏 tab 布局只有 4 个，最后两个始终是「全屏」和「源代码」，按序号选会在 tab 布局下藏错。
 

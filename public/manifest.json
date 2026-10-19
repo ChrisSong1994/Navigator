@@ -5,6 +5,7 @@
   "version": "0.0.8",
   "permissions": ["storage", "bookmarks", "activeTab"],
   "host_permissions": [
+    "file:///*",
     "https://www.google.com/*",
     "https://www.google.com.hk/*",
     "https://www.baidu.com/*",

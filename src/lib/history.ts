@@ -29,10 +29,31 @@ export interface HistoryItem {
    * 得另有一个 meta 记转换器 key，点历史时才知道该切回哪个转换器。
    */
   meta?: string
+  /**
+   * 这份文档当初是从哪个本地文件来的（`file://` 地址，只有 Markdown 用）。
+   * 回填时跟着回来，于是「保存」还能问一句要不要写回源文件，见 tools/Markdown/lib/writeBack.ts。
+   * 不进去重键：同一个文件名还是同一条历史，只是内容换成了新来源。
+   */
+  source?: string
 }
 
 function bytesOf(text: string): number {
   return new Blob([text]).size
+}
+
+/**
+ * 写一条历史时的附带信息，都是选填。
+ *
+ * 参数越长越容易写错位置（`add(items, name, content, undefined, undefined, url)` 这种），
+ * 而这三样平时都用不上，所以合成一个袋子传。
+ */
+export interface HistoryExtra {
+  /** 记录时间，默认当下；测试里要固定时间 */
+  now?: number
+  /** 程序标识，见 HistoryItem.meta */
+  meta?: string
+  /** 源文件链接，见 HistoryItem.source */
+  source?: string
 }
 
 /**
@@ -45,8 +66,7 @@ export function prependHistoryEntry(
   items: HistoryItem[],
   name: string,
   content: string,
-  now = Date.now(),
-  meta?: string,
+  { now = Date.now(), meta, source }: HistoryExtra = {},
 ): HistoryItem[] {
   const item: HistoryItem = {
     id: `${now}-${meta ?? name}`,
@@ -55,6 +75,7 @@ export function prependHistoryEntry(
     time: now,
   }
   if (meta) item.meta = meta
+  if (source) item.source = source
   if (!item.content) item.contentOmitted = true
 
   return [item, ...items].slice(0, LIMIT)
@@ -65,16 +86,14 @@ export function addHistoryEntry(
   items: HistoryItem[],
   name: string,
   content: string,
-  now = Date.now(),
-  meta?: string,
+  extra: HistoryExtra = {},
 ): HistoryItem[] {
-  const key = meta ?? name
+  const key = extra.meta ?? name
   return prependHistoryEntry(
     items.filter((entry) => (entry.meta ?? entry.name) !== key),
     name,
     content,
-    now,
-    meta,
+    extra,
   )
 }
 
@@ -85,15 +104,9 @@ export function removeHistoryEntry(items: HistoryItem[], id: string): HistoryIte
 export interface HistoryStore {
   read: () => HistoryItem[]
   write: (items: HistoryItem[]) => void
-  add: (items: HistoryItem[], name: string, content: string, now?: number, meta?: string) => HistoryItem[]
+  add: (items: HistoryItem[], name: string, content: string, extra?: HistoryExtra) => HistoryItem[]
   /** 不去重的版本，语义见 prependHistoryEntry */
-  prepend: (
-    items: HistoryItem[],
-    name: string,
-    content: string,
-    now?: number,
-    meta?: string,
-  ) => HistoryItem[]
+  prepend: (items: HistoryItem[], name: string, content: string, extra?: HistoryExtra) => HistoryItem[]
   remove: (items: HistoryItem[], id: string) => HistoryItem[]
 }
 

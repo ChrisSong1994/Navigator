@@ -302,7 +302,7 @@ function Page() {
           groups={groups}
           activeGroupId={activeGroupId}
           onNavigate={navigateToGroup}
-          className="spirit-toc fixed bottom-[12px] left-[12px] top-[69px] z-20 hidden w-[240px] flex-col  border-[var(--spirit-border)] bg-[var(--spirit-surface)]/92 px-3 pb-5 pt-4 backdrop-blur-xl lg:flex"
+          className="spirit-toc rounded-2xl fixed bottom-[12px] left-[12px] top-[69px] z-20 hidden w-[240px] flex-col  border-[var(--spirit-border)] bg-[var(--spirit-surface)]/92 px-3 pb-5 pt-4 backdrop-blur-xl lg:flex"
         />
 
         <div className="min-w-0 flex-1">

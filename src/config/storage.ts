@@ -21,10 +21,25 @@ export const SYNC_MANIFEST_KEY = 'navigator:sync:manifest'
 export const SYNC_CHUNK_PREFIX = 'navigator:sync:chunk:'
 const UPDATED_AT_KEY = 'navigator:updatedAt'
 
-/** chrome.storage.sync 单项上限 8 KB；留一点 JSON 包装余量 */
-const SYNC_CHUNK_BYTES = 8_000
+/**
+ * chrome.storage.sync 的配额。Chrome 按「key 的 UTF-8 字节 + JSON.stringify(value) 的 UTF-8 字节」计：
+ * 单项 8 KB、总量 100 KB。注意 JSON 转义也算 —— 引号 / 反斜杠各占 2 字节，控制字符最多 6 字节，
+ * 所以按原始文本字节切分并不能保证单项不超限（见 chunkText 注释）。
+ */
 const SYNC_ITEM_LIMIT = 8 * 1024
+const SYNC_TOTAL_LIMIT = 100 * 1024
+/** 给不同 Chrome 版本的计数细节留一点余量 */
+const SYNC_ITEM_MARGIN = 16
+const SYNC_TOTAL_MARGIN = 512
 const SYNC_SCHEMA_VERSION = 1
+
+/** chrome.storage.sync 写入失败（本机完整快照已经写好了，只是没能同步到云端） */
+export class SyncWriteError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'SyncWriteError'
+  }
+}
 
 export interface SyncManifest {
   version: number
@@ -105,19 +120,60 @@ function byteSize(text: string): number {
   return new TextEncoder().encode(text).byteLength
 }
 
-/** 按 UTF-8 字节数切分，且按 Unicode code point 遍历，避免中文 / emoji 超限或拆坏代理对 */
-function chunkText(text: string, maxBytes = SYNC_CHUNK_BYTES): string[] {
+/**
+ * 单个 code point 经 JSON.stringify 后的 UTF-8 字节数。
+ *
+ * 不能用原始 UTF-8 宽度：JSON 会把引号和反斜杠转义成两字节，控制字符写成 \n 一类
+ * 转义序列（最多 6 字节），孤立代理项写成 \udxxx —— 实际占用会比原文字节多。
+ */
+function escapedByteSize(char: string): number {
+  const codePoint = char.codePointAt(0) ?? 0
+  if (codePoint === 0x22 || codePoint === 0x5c) return 2
+  if (codePoint < 0x20) {
+    return codePoint === 0x08 || codePoint === 0x09 || codePoint === 0x0a || codePoint === 0x0c || codePoint === 0x0d ? 2 : 6
+  }
+  if (codePoint >= 0xd800 && codePoint <= 0xdfff) return 6
+  if (codePoint < 0x80) return 1
+  if (codePoint < 0x800) return 2
+  if (codePoint < 0x10000) return 3
+  return 4
+}
+
+function syncChunkKey(index: number): string {
+  return `${SYNC_CHUNK_PREFIX}${index}`
+}
+
+/** Chrome 记一个 sync 条目占多少配额：key 字节 + JSON.stringify(value) 字节 */
+function syncItemBytes(key: string, value: unknown): number {
+  return byteSize(key) + byteSize(JSON.stringify(value))
+}
+
+/** 第 index 个分片能放多少「转义后」字节，按它真实的 key 长度扣掉 key 与两个引号 */
+function chunkBudget(index: number): number {
+  return SYNC_ITEM_LIMIT - byteSize(syncChunkKey(index)) - 2 - SYNC_ITEM_MARGIN
+}
+
+/**
+ * 按 chrome.storage.sync 的单项配额切分快照 JSON。
+ *
+ * 按 JSON.stringify 之后的字节数计，且按 Unicode code point 遍历（不拆坏代理对）。
+ * 按原始 UTF-8 字节切会出事：8000 原始字节里如果引号 / 反斜杠多，转义后就是 9 KB 以上，
+ * Chrome 直接抛 Resource::kQuotaBytesPerItem，整次收藏都保存不了。
+ */
+function chunkText(text: string): string[] {
   const chunks: string[] = []
   let current: string[] = []
   let currentBytes = 0
+  // 分片 index 就是当前 chunks.length；key 涨位数时预算随之变小
+  let budget = chunkBudget(0)
 
   for (const char of text) {
-    const codePoint = char.codePointAt(0) ?? 0
-    const charBytes = codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2 : codePoint <= 0xffff ? 3 : 4
-    if (current.length > 0 && currentBytes + charBytes > maxBytes) {
+    const charBytes = escapedByteSize(char)
+    if (current.length > 0 && currentBytes + charBytes > budget) {
       chunks.push(current.join(''))
       current = []
       currentBytes = 0
+      budget = chunkBudget(chunks.length)
     }
     current.push(char)
     currentBytes += charBytes
@@ -125,6 +181,10 @@ function chunkText(text: string, maxBytes = SYNC_CHUNK_BYTES): string[] {
 
   if (current.length > 0) chunks.push(current.join(''))
   return chunks.length > 0 ? chunks : ['']
+}
+
+function formatKilobytes(bytes: number): string {
+  return `${Math.ceil(bytes / 1024)} KB`
 }
 
 function makeRevision(text: string): string {
@@ -207,10 +267,13 @@ async function readChromeLocalSnapshot(): Promise<LocalSnapshot> {
   const local = await chrome.storage.local.get([CONFIG_KEY, META_KEY, UPDATED_AT_KEY])
   const rawConfig = local[CONFIG_KEY]
   if (rawConfig === undefined) return emptySnapshot()
-  const config = parseConfig(rawConfig).config
+  // 存进去的是 serializeConfig 的 JSON 文本，不是对象；交给 parseSnapshot 统一 JSON.parse，
+  // 否则 parseConfig 会把它当成非法输入返回 null，这份「本机完整快照」就永远读不出来
+  // —— 而这正是 sync 写入失败时唯一可靠的兜底。
+  const parsed = parseSnapshot(rawConfig)
   const meta = (local[META_KEY] ?? null) as LocalMeta | null
   const updatedAt = local[UPDATED_AT_KEY]
-  return { config, meta, revision: null, updatedAt: typeof updatedAt === 'number' ? updatedAt : meta?.updatedAt ?? 0 }
+  return { config: parsed.config, meta, revision: null, updatedAt: typeof updatedAt === 'number' ? updatedAt : meta?.updatedAt ?? 0 }
 }
 
 async function readSyncSnapshot(): Promise<LocalSnapshot> {
@@ -256,24 +319,46 @@ async function writeSyncSnapshot(configText: string, meta: LocalMeta, updatedAt:
   const payload: SyncSnapshotPayload = { config: JSON.parse(configText) as NavConfig, meta }
   const serialized = JSON.stringify(payload)
   const chunks = chunkText(serialized)
+
+  // 切分已按 Chrome 的计数规则算过；这里兜底，防止规则变化后把配额错误留给 Chrome 报
   chunks.forEach((chunk, index) => {
-    if (byteSize(chunk) > SYNC_ITEM_LIMIT) throw new Error(`同步分片 ${index} 超过 chrome.storage.sync 单项 8 KB 限制`)
+    const key = syncChunkKey(index)
+    const bytes = syncItemBytes(key, chunk)
+    if (bytes > SYNC_ITEM_LIMIT) {
+      throw new SyncWriteError(`同步分片 ${index} 占 ${bytes} 字节，超过 chrome.storage.sync 单项 8 KB 上限`)
+    }
   })
 
   const revision = makeRevision(serialized)
   const manifest: SyncManifest = { version: SYNC_SCHEMA_VERSION, revision, chunks: chunks.length, updatedAt }
 
-  // manifest 最后写入：只有所有分片都就位后，其它设备才可能把它当成完整快照读取。
   const entries: Record<string, unknown> = {}
+  let totalBytes = syncItemBytes(SYNC_MANIFEST_KEY, manifest)
   chunks.forEach((chunk, index) => {
-    entries[`${SYNC_CHUNK_PREFIX}${index}`] = chunk
+    const key = syncChunkKey(index)
+    entries[key] = chunk
+    totalBytes += syncItemBytes(key, chunk)
   })
-  await chrome.storage.sync.set(entries)
-  await chrome.storage.sync.set({ [SYNC_MANIFEST_KEY]: manifest })
+  // 总量超限时写多少都没用，直接给可读的错误，让上层提示「只保存在本机」
+  if (totalBytes > SYNC_TOTAL_LIMIT - SYNC_TOTAL_MARGIN) {
+    throw new SyncWriteError(
+      `配置约 ${formatKilobytes(totalBytes)}，超过 chrome.storage.sync 的 100 KB 同步总量上限（通常是一个分组里积累了太多链接）`,
+    )
+  }
 
-  // 不只看旧 manifest 的 chunks：即使上一次写入在更新 manifest 前中断，也把高位历史分片清掉。
+  // manifest 最后写入：只有所有分片都就位后，其它设备才可能把它当成完整快照读取。
+  try {
+    await chrome.storage.sync.set(entries)
+    await chrome.storage.sync.set({ [SYNC_MANIFEST_KEY]: manifest })
+  } catch (error) {
+    throw new SyncWriteError(`写入 chrome.storage.sync 失败：${error instanceof Error ? error.message : String(error)}`)
+  }
+
+  // 不只看旧 manifest 的 chunks：即使上一次写入在更新 manifest 前中断，也把高位历史分片清掉；
+  // 旧版本整份放在 sync 下的 navigator:config / navigator:meta 也一并清掉，省出总量配额。
   const staleKeys = (await listSyncChunkKeys()).filter((key) => Number(key.slice(SYNC_CHUNK_PREFIX.length)) >= chunks.length)
-  if (staleKeys.length > 0) await chrome.storage.sync.remove(staleKeys)
+  const removeKeys = [...staleKeys, CONFIG_KEY, META_KEY]
+  if (removeKeys.length > 0) await chrome.storage.sync.remove(removeKeys)
 
   lastLocalRevision = revision
 }

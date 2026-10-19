@@ -12,7 +12,7 @@ import type { LocalMeta } from './merge.ts'
 import { RUNTIME_CONFIG } from './runtime.ts'
 import { parseConfig } from './schema.ts'
 import type { NavConfig, NavGroup, NavLink, NavSettings } from './schema.ts'
-import { clearSnapshot, exportBookmarksFile, exportConfigFile, loadLocal, loadSnapshot, onStorageChange, saveSnapshot, saveSnapshotNow, storageMode } from './storage.ts'
+import { clearSnapshot, exportBookmarksFile, exportConfigFile, loadLocal, loadSnapshot, onStorageChange, saveSnapshot, saveSnapshotNow, storageMode, SyncWriteError } from './storage.ts'
 
 interface ConfigState {
   config: NavConfig
@@ -130,9 +130,18 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
           dirtyRef.current = false
           setStorageError(null)
         })
-        .catch((error: unknown) =>
-          setStorageError(`配置写入 ${storageKind === 'sync' ? 'chrome.storage.sync' : 'localStorage'} 失败：${(error as Error).message}`),
-        )
+        .catch((error: unknown) => {
+          if (error instanceof SyncWriteError) {
+            // 本机完整快照已写入，只是云端同步失败；不要把改动当成没保存
+            setStorageError(`配置已保存在本机，但没同步到云端：${error.message}`)
+            if (generation === saveGenerationRef.current) {
+              lastSavedRef.current = { config, meta }
+              dirtyRef.current = false
+            }
+            return
+          }
+          setStorageError(`配置写入 ${storageKind === 'sync' ? 'chrome.storage.sync' : 'localStorage'} 失败：${(error as Error).message}`)
+        })
     }, 300)
     return () => clearTimeout(timer)
   }, [config, meta, storageReady, storageKind])
