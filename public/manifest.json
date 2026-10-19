@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "导航精灵",
   "description": "支持跨设备同步配置和全局搜索的新标签页导航主页。",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "permissions": ["storage", "bookmarks", "activeTab"],
   "host_permissions": [
     "file:///*",
