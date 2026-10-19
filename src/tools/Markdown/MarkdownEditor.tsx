@@ -1,9 +1,10 @@
 import { Editor } from '@bytemd/react'
 import EDITOR_ZH from 'bytemd/locales/zh_Hans.json'
-import { useRef } from 'react'
+import { useMemo, useRef } from 'react'
 
 import { useFillHeight } from '../../hooks/useFillHeight.ts'
-import { PLUGINS } from './plugins.ts'
+import { allowLocalImageProtocols } from './lib/localImages.ts'
+import { createPlugins } from './plugins.ts'
 
 /**
  * 编辑模式：bytemd 编辑器，左边写右边预览。
@@ -16,18 +17,28 @@ import { PLUGINS } from './plugins.ts'
  */
 export function MarkdownEditor({
   value,
+  imageBase,
   onChange,
 }: {
   value: string
+  /** 文档所在目录（`file:///…/`）；拖入 / 导入的文档没有，图片地址保持原样 */
+  imageBase: string | null
   onChange: (next: string) => void
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
   // 不留余量：编辑器一路铺到视口底部，卡片自身的下内边距天然就是间距
   const height = useFillHeight(hostRef, 0)
+  const plugins = useMemo(() => createPlugins(imageBase), [imageBase])
 
   return (
     <div className="markdown-tool-editor" ref={hostRef} style={{ height }}>
-      <Editor value={value} plugins={PLUGINS} locale={EDITOR_ZH} onChange={onChange} />
+      <Editor
+        value={value}
+        plugins={plugins}
+        sanitize={imageBase ? allowLocalImageProtocols : undefined}
+        locale={EDITOR_ZH}
+        onChange={onChange}
+      />
     </div>
   )
 }

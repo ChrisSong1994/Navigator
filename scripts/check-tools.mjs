@@ -25,6 +25,12 @@ import { JSON_FILE_KIND } from '../src/tools/Json/lib/kind.ts'
 import { MARKDOWN_FILE_KIND } from '../src/tools/Markdown/lib/kind.ts'
 import { READ_FILE_HINT, fileNameFromUrl, readUrlDocument } from '../src/lib/file.ts'
 import { createSourceHandleStore } from '../src/tools/Markdown/lib/sourceHandle.ts'
+import {
+  allowLocalImageProtocols,
+  hasLocalImageRefs,
+  imageBaseFromSource,
+  resolveLocalImageUrl,
+} from '../src/tools/Markdown/lib/localImages.ts'
 import { pickAndWrite, writeIntoHandle } from '../src/tools/Markdown/lib/writeBack.ts'
 import {
   cmykToRgb,
@@ -885,6 +891,44 @@ test('本地文件：文件名从地址里取，带百分号转义的还原回�
   assert.equal(fileNameFromUrl('file:///tmp/%E8.md'), '%E8.md')
   assert.equal(fileNameFromUrl('file:///'), '未命名文档')
   assert.equal(fileNameFromUrl(''), '未命名文档')
+})
+
+test('本地文档的图片：相对地址按文档目录解析成 file://（绝对地址才能加载）', () => {
+  const base = imageBaseFromSource('file:///tmp/docs/note.md')
+  assert.equal(base, 'file:///tmp/docs/')
+  // 同级 / 相对 / 回到上一级 / 根路径；空格要转义，否则 URL 里是非法字符
+  assert.equal(resolveLocalImageUrl('./pic.png', base), 'file:///tmp/docs/pic.png')
+  assert.equal(resolveLocalImageUrl('pic.png', base), 'file:///tmp/docs/pic.png')
+  assert.equal(resolveLocalImageUrl('../images/a.png', base), 'file:///tmp/images/a.png')
+  assert.equal(resolveLocalImageUrl('/tmp/a b.png', base), 'file:///tmp/a%20b.png')
+  // 已经带协议 / data URI / 纯锚点不归这里管，原样交给页面（file:// 会在 sanitize 那步被剥掉，
+  // 但插件是在 sanitize 之后跑的，所以这里不重写也没损失 —— 见 lib/localImages.ts 文件头）
+  assert.equal(resolveLocalImageUrl('https://example.com/a.png', base), null)
+  assert.equal(resolveLocalImageUrl('data:image/png;base64,AA', base), null)
+  assert.equal(resolveLocalImageUrl('#figure-1', base), null)
+  // 没有来源 / 不是本地文件 / 坏地址：都没有可解析的目录
+  assert.equal(imageBaseFromSource(null), null)
+  assert.equal(imageBaseFromSource('https://example.com/a.md'), null)
+  assert.equal(imageBaseFromSource('不是个地址'), null)
+
+  // markdown 里直接写 file:// 绝对地址的：得放行 sanitize 的 src 协议，否则还没到插件就被删了
+  const input = { protocols: { src: ['http', 'https'] } }
+  const schema = allowLocalImageProtocols(input)
+  assert.deepEqual(schema.protocols.src, ['http', 'https', 'file'])
+  // 重复调用（多次渲染）不能把 file 叠两遍
+  assert.deepEqual(allowLocalImageProtocols(schema).protocols.src, ['http', 'https', 'file'])
+  // 原对象不被改动
+  assert.deepEqual(input.protocols.src, ['http', 'https'])
+})
+
+test('本地文档的图片：拿不到目录的文档只给提示，不假装能渲染', () => {
+  assert.equal(hasLocalImageRefs('![图](./pic.png)'), true)
+  assert.equal(hasLocalImageRefs('![图](../assets/pic.png "标题")'), true)
+  assert.equal(hasLocalImageRefs('<img src="images/a.png">'), true)
+  // http(s) / data 地址本来就能加载，不需要提示
+  assert.equal(hasLocalImageRefs('![图](https://example.com/a.png)'), false)
+  assert.equal(hasLocalImageRefs('![图](data:image/png;base64,AA)'), false)
+  assert.equal(hasLocalImageRefs('没有图片'), false)
 })
 
 testAsync('本地文件：只认 file://，别让它变成扩展的通用取数口子', async () => {

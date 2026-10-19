@@ -17,6 +17,8 @@ import mediumZoom from '@bytemd/plugin-medium-zoom'
 import mermaid from '@bytemd/plugin-mermaid'
 import type { BytemdPlugin } from 'bytemd'
 
+import { createLocalImagePlugin } from './lib/localImages.ts'
+
 import GFM_ZH from '@bytemd/plugin-gfm/locales/zh_Hans.json'
 import MATH_ZH from '@bytemd/plugin-math/locales/zh_Hans.json'
 import MERMAID_ZH from '@bytemd/plugin-mermaid/locales/zh_Hans.json'
@@ -37,3 +39,16 @@ export const PLUGINS: BytemdPlugin[] = [
   mediumZoom(),
   mermaid({ locale: MERMAID_ZH }),
 ]
+
+/**
+ * 当前文档的插件表。
+ *
+ * 文档来自已知本地文件时（`imageBase` 非空），追加一个把相对图片地址按文档目录解析成
+ * `file://` 的插件（见 lib/localImages.ts）；拖入 / 导入的文档没有目录可依，保持原样。
+ *
+ * 调用方要用 `useMemo` 按 `imageBase` 缓存住：`@bytemd/react` 以 props 的身份作依赖，
+ * 每帧换一份新数组会让它白跑一遍（与上面 PLUGINS 是模块级常量同一个原因）。
+ */
+export function createPlugins(imageBase: string | null): BytemdPlugin[] {
+  return imageBase ? [...PLUGINS, createLocalImagePlugin(imageBase)] : PLUGINS
+}

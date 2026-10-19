@@ -319,6 +319,22 @@
 }
 
 /*
+ * 「本地图片解析不了」的说明条：只在文档没有来源目录（拖入 / 导入）却又引用了本地图片时出现
+ * （判定见 lib/localImages.ts 的 hasLocalImageRefs）。宽度与下面的正文栏对齐（980px）。
+ */
+.markdown-render-image-hint {
+  max-width: 980px;
+  margin: 20px auto 0;
+  padding: 10px 14px;
+  border: 1px solid var(--spirit-border);
+  border-radius: 8px;
+  background: var(--spirit-inset);
+  color: var(--spirit-muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+/*
  * 正文的底色与留白只覆盖演示模式这一份（两段选择器权重 (0,2,0)，压得过 github-markdown-css 的
  * .markdown-body；那两张主题样式表是运行时才挂上去的，文档顺序上反而在后面，靠权重说话）。
  *

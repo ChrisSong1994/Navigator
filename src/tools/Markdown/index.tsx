@@ -15,7 +15,7 @@
  * 状态都留在这里：两个模式拿到的是同一份 value / fileName / history / source，切模式只是换个视图。
  */
 import { message } from 'antd'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import DropOverlay from '../../components/DropOverlay.tsx'
 import { createHistoryStore, type HistoryItem } from '../../lib/history.ts'
@@ -39,6 +39,7 @@ import { SaveSourceModal } from './components/SaveSourceModal.tsx'
 import { Toolbar } from './components/Toolbar.tsx'
 import { useThemeStylesheets } from './hooks/useThemeStylesheets.ts'
 import { MARKDOWN_FILE_KIND } from './lib/kind.ts'
+import { imageBaseFromSource } from './lib/localImages.ts'
 import type { MarkdownMode } from './lib/mode.ts'
 import { createSourceHandleStore } from './lib/sourceHandle.ts'
 import { pickAndWrite, writeIntoHandle } from './lib/writeBack.ts'
@@ -95,6 +96,11 @@ const MarkdownTool = () => {
    * 来源（拖入 / 导入 / 另存为）就没了。它跟着历史走，从历史里回填时也会一起回来。
    */
   const [source, setSource] = useState<string | null>(null)
+  /**
+   * 相对图片路径的解析基准（文档所在目录，`file:///…/`）。
+   * 只有知道这份文档来自哪个本地文件时才有；拖入 / 导入的 `File` 连路径都拿不到，留空。
+   */
+  const imageBase = useMemo(() => imageBaseFromSource(source), [source])
   /** 「要写回源文件吗」那个确认框开着没有 */
   const [confirmSave, setConfirmSave] = useState(false)
   // 交接过来这份也算一条历史；HISTORY.add 只做纯计算，落盘同样在 effect 里
@@ -292,12 +298,12 @@ const MarkdownTool = () => {
     else if (result.status === 'focused') message.info('Markdown 弹窗已存在，已聚焦')
   }
 
-  // 弹窗与主窗口之间的桥。回调里要用到最新的 value / currentFileName，又不想每次改动都重建通道
-  // （重建的瞬间会漏消息），所以走 ref 读最新值
-  const latestRef = useRef({ value, currentFileName })
+  // 弹窗与主窗口之间的桥。回调里要用到最新的 value / currentFileName / source，又不想每次改动都重建通道
+  // （重建的瞬间会漏消息），所以走 ref 读最新值。source 也要同步：弹窗里同样要按文档目录解析本地图片
+  const latestRef = useRef({ value, currentFileName, source })
   useEffect(() => {
-    latestRef.current = { value, currentFileName }
-  }, [value, currentFileName])
+    latestRef.current = { value, currentFileName, source }
+  }, [value, currentFileName, source])
 
   const bridgeRef = useRef<ReturnType<typeof createBridge> | null>(null)
 
@@ -309,12 +315,14 @@ const MarkdownTool = () => {
           type: 'state',
           value: latestRef.current.value,
           name: latestRef.current.currentFileName,
+          source: latestRef.current.source,
         })
         return
       }
       if (incoming.type === 'state' || incoming.type === 'update') {
         setValue(incoming.value ?? '')
         setCurrentFileName(incoming.name ?? null)
+        setSource(incoming.source ?? null)
       }
     })
     bridgeRef.current = bridge
@@ -329,9 +337,9 @@ const MarkdownTool = () => {
   }, [popup])
 
   const handleSyncToMain = useCallback(() => {
-    bridgeRef.current?.send({ type: 'update', value, name: currentFileName })
+    bridgeRef.current?.send({ type: 'update', value, name: currentFileName, source })
     message.success('已同步到主窗口')
-  }, [value, currentFileName])
+  }, [value, currentFileName, source])
 
   // 整窗拖入：拖到窗口里任何地方都算数，落下来就是「我要看这份文档」→ 切演示模式渲染
   const dragging = useWindowFileDrop({
@@ -361,11 +369,12 @@ const MarkdownTool = () => {
       />
 
       {mode === 'edit' ? (
-        <MarkdownEditor value={value} onChange={setValue} />
+        <MarkdownEditor value={value} imageBase={imageBase} onChange={setValue} />
       ) : (
         <MarkdownRender
           value={value}
           fileName={currentFileName}
+          imageBase={imageBase}
           emptyReason={readFailure}
           onUpload={() => void handleImport()}
         />

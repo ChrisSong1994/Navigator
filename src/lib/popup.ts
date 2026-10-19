@@ -19,6 +19,8 @@ export interface ToolMessage {
   type: 'hello' | 'state' | 'update'
   value?: string
   name?: string | null
+  /** 文档来源的 `file://` 地址（Markdown 用：弹窗里也要按文档目录解析本地图片） */
+  source?: string | null
 }
 
 export interface Bridge {

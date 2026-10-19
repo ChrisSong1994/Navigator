@@ -1,10 +1,11 @@
 import { UploadOutlined } from '@ant-design/icons'
 import { Viewer } from '@bytemd/react'
 import { Button, Empty } from 'antd'
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { useFillHeight } from '../../hooks/useFillHeight.ts'
-import { PLUGINS } from './plugins.ts'
+import { allowLocalImageProtocols, hasLocalImageRefs } from './lib/localImages.ts'
+import { createPlugins } from './plugins.ts'
 
 /** 目录里的一条标题 */
 interface Heading {
@@ -44,11 +45,14 @@ function cleanHeadingText(text: string | null): string {
 export function MarkdownRender({
   value,
   fileName,
+  imageBase,
   emptyReason,
   onUpload,
 }: {
   value: string
   fileName: string | null
+  /** 文档所在目录（`file:///…/`），用来解析相对图片路径；拖入 / 导入的文档没有 */
+  imageBase: string | null
   /** 打开地址栏那份本地文件失败时的说明（见 index.tsx 的 readFailure）：空态说的就不是「还没有文档」了 */
   emptyReason?: string | null
   /** 空文档时那个「上传 Markdown」按钮，接的是工具栏的导入 */
@@ -58,6 +62,7 @@ export function MarkdownRender({
   const paneRef = useRef<HTMLDivElement>(null)
   // 不留余量：正文一路铺到视口底部，卡片自身的下内边距天然就是间距
   const height = useFillHeight(hostRef, 0)
+  const plugins = useMemo(() => createPlugins(imageBase), [imageBase])
 
   const [headings, setHeadings] = useState<Heading[]>([])
   const [active, setActive] = useState(0)
@@ -152,6 +157,10 @@ export function MarkdownRender({
     headingEls.current[index]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
+  // 没有来源目录（拖入 / 导入）却又引用了本地图片：图片注定解析不了，说清原因，
+  // 别让人以为渲染坏了。能解析的那条路见 index.tsx 的 imageBase 与 lib/localImages.ts
+  const showImageHint = imageBase === null && hasLocalImageRefs(value)
+
   // 空文档（清空 / 拖进来一个空文件 / 地址栏那份没读出来）给空态，不画一版空白正文。
   // 后一种情况保留「上传 Markdown」那条退路：文件读不到还能自己选一份进来
   if (!value.trim()) {
@@ -207,7 +216,16 @@ export function MarkdownRender({
       ) : null}
 
       <div className="markdown-render-pane spirit-scroll" ref={paneRef} onScroll={handleScroll}>
-        <Viewer value={value} plugins={PLUGINS} />
+        {showImageHint ? (
+          <p className="markdown-render-image-hint">
+            文中的本地图片没能显示：拖入 / 导入的文件拿不到所在目录，相对路径图片无法解析。用浏览器打开这个 .md（扩展会接管）后，图片会按文档目录自动加载。
+          </p>
+        ) : null}
+        <Viewer
+          value={value}
+          plugins={plugins}
+          sanitize={imageBase ? allowLocalImageProtocols : undefined}
+        />
       </div>
     </div>
   )

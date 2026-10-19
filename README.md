@@ -170,6 +170,7 @@ chrome_bookmarks_demo.html ──pnpm import:bookmarks──▶ global_original.
 - 只截 `file://`，http(s) 的文档不管：公网那份可能根本不是文本（也可能很大），得先下载、认得、再决定，不值当
 - 正文不由 service worker 读，而是工具页拿着 `?file=` 自己 `fetch(file://…)`（`src/lib/file.ts` 的 `readUrlDocument`，两个工具共用），读完装进去（写历史；Markdown 还切演示模式，与拖入同一条路）。代价是 manifest 得要 `host_permissions: ["file:///*"]` —— 光有它就能看见导航、也能读正文，`tabs` 权限做不到后者。**已经装过的扩展要重新加载一次**（`host_permissions` 变了），并且扩展详情里「允许访问文件网址」得是开的；Chrome 在 manifest 声明了 `file:///*` 时会自己把它打开。读不到就照常落在那个标签页上：Markdown 在空态里、JSON 在编辑器上方，都说清是哪个开关（`READ_FILE_HINT`）
 - 扩展不给页面文件路径，所以「这份文档来自哪个文件」只能靠这个地址记着（Markdown 的写回就靠它，JSON 的历史条目也靠它重读）；拖进来的 `File` 对象连地址都没有（`dataTransfer.files` 里没有路径），那份也就无从写回。JSON 工具目前只在打开时读一次、保存仍是普通的另存为，不提供写回
+- **本地图片**：能拿到文档地址的（`?file=` 打开、从历史里按 `file://` 地址重读）会把 markdown 里的相对图片路径按文档目录解析成绝对 `file://` 地址再渲染，markdown 里直接写 `file:///…` 的也放行（默认 sanitizer 的 `src` 只认 http/https）；编辑模式的预览与演示模式都生效，原文不动（`src/tools/Markdown/lib/localImages.ts`：bytemd 插件的 `rehype` 在 sanitize **之后**执行，改出来的地址不会被删）。拖入 / 导入的 `File` 没有目录可依，相对图片无法解析，演示模式里会显示一句说明而不是默默破图
 
 **写回源文件**：从本地文件打开的那份，编辑完按「保存」不再默默另存为，而是先问一句（`components/SaveSourceModal.tsx`：写回源文件 / 另存为… / 取消），工具栏那个保存按钮的提示也会写上「会问是否写回 x.md」。
 
