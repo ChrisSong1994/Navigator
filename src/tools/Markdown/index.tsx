@@ -11,6 +11,8 @@
  * 7、亮 / 暗两套主题（原项目固定亮色）
  * 8、浏览器里打开本机的 .md：扩展把那个 file:// 导航换成 ?file= 落到这里（读文件见公共层 lib/file.ts）
  * 9、编辑这份文件之后保存，问一句要不要写回它（见 lib/writeBack.ts 与 lib/sourceHandle.ts）
+ * 10、打印 / 导出 PDF：工具栏那个按钮与 Ctrl+P 共用一套版式，纸上只留正文一整篇
+ *    （@media print 全在 Markdown.css；深色模式下改由亮色那套主题表说了算，见 useThemeStylesheets）
  *
  * 状态都留在这里：两个模式拿到的是同一份 value / fileName / history / source，切模式只是换个视图。
  */
@@ -358,6 +360,7 @@ const MarkdownTool = () => {
         mode={mode}
         sourceName={source ? fileNameFromUrl(source) : null}
         onModeChange={setMode}
+        onPrint={() => window.print()}
         onImport={() => void handleImport()}
         onSave={handleSave}
         onClear={handleClear}

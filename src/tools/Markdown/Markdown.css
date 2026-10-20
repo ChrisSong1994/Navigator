@@ -347,7 +347,7 @@
  * 编辑器里的预览区不受影响（选择器挂在 .markdown-render-pane 下）。
  */
 .markdown-render-pane .markdown-body {
-  max-width: 980px;
+  max-width: 1024px;
   margin: 0 auto;
   padding: 28px 40px 72px;
   background: transparent;
@@ -369,6 +369,158 @@
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border-width: 0;
+}
+
+/* 打印 -------------------------------------------------------------------- */
+
+/**
+ * 打印（Ctrl+P / 工具栏那个按钮）时纸上只留正文一整篇。
+ *
+ * 为什么非写一套不可：正文栏（演示模式的 .markdown-render-pane）与编辑器预览（.bytemd-preview）都是
+ * 「固定像素高 + overflow: auto」的栏内滚动 —— 高度是 useFillHeight 量出来、以内联 style 挂在
+ * .markdown-render-root / .markdown-tool-editor 上的（见 MarkdownRender.tsx 与 MarkdownEditor.tsx）。
+ * 打印按这个视口排版分页，栏里没滚到的部分压根不参与，长文档打出来就只有第一屏，后面全被裁掉。
+ * 这里把高度与滚动拆掉，让正文按纸面自然分页。
+ *
+ * 顺手要处理的三件事：站点外壳（顶栏 / 工具箱 / 壁纸 / 卡片）别占纸面；深色模式下正文是浅色字
+ * （当前主题那两份样式表的问题，靠 useThemeStylesheets 那道 media="print" 的亮色表解决，不在这里管）；
+ * 卡片与画布那两块深色底在「打印背景图形」勾上时会印成一整张黑纸，这里一律按白纸来。
+ *
+ * 这段里的 !important 只用来压两样东西：内联 style（高度）与 vendored / 工具类里带 !important 的规则
+ * (.bytemd-hidden 是 display:none!important，卡片的 p-4 是 Tailwind 工具类)。打印是一次性模式，
+ * 而样式表在 dev 与 build 下的先后顺序不完全一致，这些地方不值得赌权重。
+ */
+@media print {
+  /* 页边距交给浏览器（正文栏自己的 980px 限宽与留白在这段里全部解掉，见下） */
+  @page {
+    margin: 16mm 14mm;
+  }
+
+  /* 站点外壳与工具自身的外壳都不印：顶栏、壁纸、工具栏、左侧文档目录 */
+  .spirit-wallpaper,
+  .spirit-canvas > header,
+  .markdown-tool-toolbar,
+  .markdown-render-toc {
+    display: none !important;
+  }
+
+  /* 卡片那一圈内边距 / 圆角 / 深色底：纸上不需要，也会把正文挤得离纸边太远 */
+  .spirit-canvas > main,
+  .spirit-canvas > main > div {
+    padding: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+  }
+
+  /* 分页媒体里 min-height: 100% / 100vh 会顶成一整页高，短文档也要多印一张空白页 */
+  html,
+  body,
+  #root,
+  .spirit-canvas {
+    min-height: 0 !important;
+  }
+
+  /* 勾了「打印背景图形」时别把深色主题的底色印成黑纸 */
+  body,
+  .spirit-canvas {
+    background: #fff !important;
+  }
+
+  /* 空态那句说明与「本地图片解析不了」的提示条用的是 antd 暗色 token / --spirit-muted，白纸上几乎看不见 */
+  .markdown-render-empty-hint,
+  .markdown-render-image-hint,
+  .markdown-render-root .ant-empty-description {
+    color: #1f2329 !important;
+  }
+
+  /* 演示模式：拆掉量出来的高度与栏内滚动，正文从页顶开始自然分页 */
+  .markdown-render-root {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+    border: none !important;
+    border-radius: 0 !important;
+  }
+
+  .markdown-render-pane {
+    overflow: visible !important;
+  }
+
+  /* 980px 阅读栏与 28 / 40 / 72 的留白是屏幕上的事，纸面留给 @page 的页边距 */
+  .markdown-render-pane .markdown-body {
+    max-width: none;
+    padding: 0;
+  }
+
+  /* 编辑模式：只印右侧预览那一版渲染，源码区 / 工具栏 / 状态栏 / 侧栏都不印 */
+  .markdown-tool-editor {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    border: none !important;
+  }
+
+  .markdown-tool-editor .bytemd-toolbar,
+  .markdown-tool-editor .bytemd-status,
+  .markdown-tool-editor .bytemd-sidebar,
+  .markdown-tool-editor .bytemd-editor {
+    display: none !important;
+  }
+
+  /*
+   * bytemd 那三层外壳也各有一套固定高与滚动：.bytemd 是 300px、.bytemd-body 是 calc(100% - 58px)、
+   * 预览区是 height: 100%（见 bytemd/dist/index.css）。
+   * display: block !important 是给预览区用的：卡片窄到切 tab 布局、用户停在「只写」那一页时，
+   * 预览区带的是 .bytemd-hidden（它本身就是 display:none!important），不强制回来就会打出一张白纸。
+   */
+  .markdown-tool-editor .bytemd,
+  .markdown-tool-editor .bytemd-body,
+  .markdown-tool-editor .bytemd-preview {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+    border: none !important;
+    background: transparent !important;
+  }
+
+  .markdown-tool-editor .bytemd-preview .markdown-body {
+    max-width: none;
+    padding: 0;
+  }
+
+  /* 标题别孤零零留在页尾 */
+  .markdown-body h1,
+  .markdown-body h2,
+  .markdown-body h3,
+  .markdown-body h4,
+  .markdown-body h5,
+  .markdown-body h6 {
+    break-after: avoid;
+  }
+
+  /* 图 / 表 / 引用 / 代码块放得下就不跨页；比一页还长的块 Chrome 会自然忽略 avoid，照常断 */
+  .markdown-body img,
+  .markdown-body table,
+  .markdown-body tr,
+  .markdown-body pre,
+  .markdown-body blockquote {
+    break-inside: avoid;
+  }
+
+  /*
+   * 代码块的浅灰底：默认不印底纹，没了它代码块和正文段落分不开。
+   * print-color-adjust 是继承属性，在 pre 上放行，里面的 .hljs 也跟着印；
+   * 再把 hljs 自己那层白底去掉，让 pre 的浅灰透出来（两个模式用的是同一份亮色主题，
+   * 见 useThemeStylesheets 里打印那两份）。
+   */
+  .markdown-body pre {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .markdown-body pre code.hljs {
+    background-color: transparent;
+  }
 }
 
 /**

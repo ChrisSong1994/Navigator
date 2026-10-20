@@ -4,6 +4,7 @@ import {
   EditOutlined,
   ExportOutlined,
   HistoryOutlined,
+  PrinterOutlined,
   ReadOutlined,
   SaveOutlined,
   SyncOutlined,
@@ -19,7 +20,7 @@ import type { MarkdownMode } from '../lib/mode.ts'
 
 /**
  * 编辑器上方那排图标按钮，照 JSON 工具的工具栏写：
- * 【编辑 / 演示】→ 复制 → 导入 → 保存 → 历史 → 【弹出窗口 / 同步】→ 清除。
+ * 【编辑 / 演示】→ 复制 → 打印 → 导入 → 保存 → 历史 → 【弹出窗口 / 同步】→ 清除。
  *
  * 两个模式共用这一排：演示模式里「导入」就是上传文档渲染，「复制」复制的是 md 源码，
  * 「历史」是同一份记录，所以不必给演示模式另起一排按钮。
@@ -52,6 +53,8 @@ export interface ToolbarProps {
   /** 当前文档的源文件名（来自本地文件才有）：保存会问要不要写回它，按钮上说一声 */
   sourceName: string | null
   onModeChange: (mode: MarkdownMode) => void
+  /** 调 window.print()；打印版式全在 Markdown.css 的 @media print 里，两个模式共用一个入口 */
+  onPrint: () => void
   onImport: () => void
   onSave: () => void
   onClear: () => void
@@ -137,6 +140,8 @@ export function Toolbar(props: ToolbarProps) {
       <span className="markdown-tool-toolbar-gap" />
 
       <Copy value={props.value} />
+      {/* 编辑模式打的是右侧预览那一版渲染，不是 md 源码（见 Markdown.css 的 @media print） */}
+      <ToolbarButton title="打印" icon={<PrinterOutlined />} onClick={props.onPrint} />
       <ToolbarButton title="导入" icon={<UploadOutlined />} onClick={props.onImport} />
       {/* 有个源文件就说明白：保存不是「另存为」，而是问你要不要写回磁盘上那份 */}
       <ToolbarButton

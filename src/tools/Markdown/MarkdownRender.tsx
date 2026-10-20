@@ -41,6 +41,8 @@ function cleanHeadingText(text: string | null): string {
  * 而 DOM 里的就是真正渲染出来的东西，永远对得上。锚点也顺带成立：标题带 `user-content-` 前缀的 id。
  *
  * 高度还是 useFillHeight 量出来的（和编辑模式同一套），滚动发生在正文那一栏内部，不是整页滚。
+ * 也正因为滚动在栏内，打印时要专门把量出来的高度与这层滚动拆掉，否则只能打出第一屏 ——
+ * 那套规则集中在 Markdown.css 的 @media print 里（正文自然分页，目录与外框不印）。
  */
 export function MarkdownRender({
   value,
