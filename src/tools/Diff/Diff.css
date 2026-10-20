@@ -1,0 +1,83 @@
+/**
+ * Diff 工具自己的样式。
+ *
+ * 上游 `components/Editor/index.module.less` 里那几条 `.editor-wrap` / `.editor-empty-*`
+ * 搬过来，颜色改走仓库的 --spirit-* token，类名统一 diff-tool- 前缀。
+ */
+
+.diff-tool-root {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 语言下拉 ---------------------------------------------------------------- */
+
+.diff-tool-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+
+.diff-tool-header-label {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* 把「弹出到独立窗口 / 同步到主窗口」推到最右边 */
+.diff-tool-header-spacer {
+  flex: 1;
+}
+
+/* 编辑器 ------------------------------------------------------------------ */
+
+.diff-tool-editor {
+  position: relative;
+  min-height: 320px;
+  overflow: hidden;
+  border: 1px solid var(--spirit-border-strong);
+  border-radius: 8px;
+}
+
+/*
+ * 空态提示压在左右两半上。整块不接指针（否则空编辑器点不进去），只有图标可点，
+ * 和上游一样：点图标导入文件。
+ */
+.diff-tool-tip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 50%;
+  border: none;
+  background: transparent;
+  color: var(--spirit-muted);
+  font-size: 14px;
+  white-space: pre-wrap;
+  user-select: none;
+  pointer-events: none;
+}
+
+.diff-tool-tip-left {
+  left: 0;
+}
+
+.diff-tool-tip-right {
+  right: 0;
+}
+
+.diff-tool-tip-icon {
+  margin-bottom: 6px;
+  font-size: 42px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.diff-tool-tip-icon:hover {
+  color: var(--spirit-accent);
+}

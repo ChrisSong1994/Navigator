@@ -77,6 +77,7 @@ import {
 } from '../src/tools/Transform/lib/converters.ts'
 import { SAMPLE_JSON, SAMPLE_YAML, SAMPLE_JS_OBJECT } from '../src/tools/Transform/lib/sample.ts'
 import { parseJsObject, parseJson, parseYaml } from '../src/tools/Transform/lib/parse.ts'
+import { parseUrlRecord, URL_FIELDS } from '../src/tools/UrlParse/lib/url.ts'
 
 let passed = 0
 const test = (name, fn) => {
@@ -1317,6 +1318,43 @@ for (const key of NODE_SAFE_CONVERTERS) {
     )
   })
 }
+
+test('URL 解析：协议去掉冒号，用户名 / 密码 / 端口 / 路径 / 哈希都拆出来', () => {
+  const parsed = parseUrlRecord('https://user:pass@example.com:8443/a/b?x=1&y=2#frag')
+  assert.ok(parsed)
+  assert.equal(parsed.protocol, 'https')
+  assert.equal(parsed.username, 'user')
+  assert.equal(parsed.password, 'pass')
+  assert.equal(parsed.hostname, 'example.com')
+  assert.equal(parsed.port, '8443')
+  assert.equal(parsed.pathname, '/a/b')
+  assert.equal(parsed.hash, '#frag')
+  assert.deepEqual(parsed.searchParams, { x: '1', y: '2' })
+})
+
+test('URL 解析：查询参数会解码，重复键与上游一致取后一个', () => {
+  const parsed = parseUrlRecord('https://example.com/?q=%E4%B8%AD%E6%96%87&a=1&a=2')
+  assert.ok(parsed)
+  assert.equal(parsed.searchParams.q, '中文')
+  assert.equal(parsed.searchParams.a, '2')
+})
+
+test('URL 解析：长度按归一化后的完整地址算', () => {
+  const parsed = parseUrlRecord('https://example.com')
+  assert.ok(parsed)
+  // new URL('https://example.com').toString() 会补上末尾的 /
+  assert.equal(parsed.size, '20 个字符')
+})
+
+test('URL 解析：空输入与非法地址返回 null，字段表保持固定顺序', () => {
+  assert.equal(parseUrlRecord(''), null)
+  assert.equal(parseUrlRecord('   '), null)
+  assert.equal(parseUrlRecord('example.com'), null)
+  assert.deepEqual(
+    URL_FIELDS.map((field) => field.key),
+    ['size', 'protocol', 'username', 'password', 'hostname', 'port', 'pathname', 'hash', 'searchParams'],
+  )
+})
 
 // AST 那边几个用例要等 loadParser 的动态 import
 await Promise.all(pending)

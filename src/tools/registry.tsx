@@ -1,7 +1,9 @@
 import {
   BgColorsOutlined,
   CodeOutlined,
+  DiffOutlined,
   FileMarkdownOutlined,
+  GlobalOutlined,
   PartitionOutlined,
   SwapOutlined,
 } from '@ant-design/icons'
@@ -59,6 +61,20 @@ export const TOOLS: ToolEntry[] = [
     description: 'JSON / YAML / JS Object 互转：TypeScript、Go、Java、Kotlin、MySQL、JSON Schema',
     icon: <SwapOutlined />,
     content: lazy(() => import('./Transform/index.tsx')),
+  },
+  {
+    key: 'diff',
+    title: 'Diff',
+    description: '左右文本对比 / 两边都可编辑 / 导入或拖入文件 / 26 种语言高亮',
+    icon: <DiffOutlined />,
+    content: lazy(() => import('./Diff/index.tsx')),
+  },
+  {
+    key: 'url',
+    title: 'URL 解析',
+    description: '拆解协议 / 主机 / 端口 / 路径 / 哈希 / 查询参数，实时解析',
+    icon: <GlobalOutlined />,
+    content: lazy(() => import('./UrlParse/index.tsx')),
   },
 ]
 

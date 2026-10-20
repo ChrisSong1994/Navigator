@@ -12,7 +12,8 @@
  * - 另外 9 类语言、15 个 parser：见 parsers/index.ts 的说明。
  * - zustand 那个 store：整套状态只有这一个页面用，跟 Json / 颜色两个工具一样留在组件里。
  */
-import { Empty, Select, Spin, Splitter } from 'antd'
+import { ExportOutlined, SyncOutlined } from '@ant-design/icons'
+import { Button, Empty, Select, Spin, Splitter, Tooltip, message } from 'antd'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { editor } from 'monaco-editor/esm/vs/editor/editor.api'
 
@@ -23,6 +24,7 @@ import { categories, findCategory } from './parsers/index.ts'
 import type { Category, Parser } from './parsers/types.ts'
 import { safeStringify } from './lib/safeStringify.ts'
 import { useFillHeight } from '../../hooks/useFillHeight.ts'
+import { createBridge, isPopupPage, openToolPopup } from '../../lib/popup.ts'
 import './AstExplorer.css'
 
 /** 面板里的东西都填满所在栏 */
@@ -35,6 +37,14 @@ const VIEW_TYPES = [
 
 type ViewType = (typeof VIEW_TYPES)[number]['value']
 
+const POPUP = {
+  windowName: 'navigator-ast-popup',
+  channelName: 'navigator-ast-tool',
+  // 左源码右 AST，两栏都要放得下
+  width: 1440,
+  height: 900,
+} as const
+
 /** 哪一套 tree adapter 读这棵 AST：estree 系和别的差别挺大，见 TreeAdapter.ts */
 function adapterTypeFor(category: Category): string {
   return category.id === 'javascript' ? 'estree' : category.id
@@ -45,6 +55,8 @@ const AstExplorer = () => {
   const [parser, setParser] = useState<Parser>(categories[0].parsers[0])
   const [code, setCode] = useState(() => categories[0].codeExample ?? '')
   const [viewType, setViewType] = useState<ViewType>('tree')
+  // 地址栏带 popup=1 就是那个被弹出来的窗口：工具栏最后一位换成「同步到主窗口」
+  const [popup] = useState(isPopupPage)
 
   /**
    * 解析库实例，**跟它属于哪个 parser 绑在一起**。
@@ -67,6 +79,17 @@ const AstExplorer = () => {
 
   const splitterRef = useRef<HTMLDivElement>(null)
   const height = useFillHeight(splitterRef, 0)
+
+  /** 弹窗那边问 hello 时要递过去的最新一屏：语言 / 解析器 / 源码 / 视图 */
+  const latestRef = useRef({
+    categoryId: category.id,
+    parserId: parser.id,
+    code,
+    viewType,
+  })
+  useEffect(() => {
+    latestRef.current = { categoryId: category.id, parserId: parser.id, code, viewType }
+  }, [category, parser, code, viewType])
 
   // parser 换了就把解析库换掉。loadParser 是动态 import，只有真用到的语言才会下载
   useEffect(() => {
@@ -174,6 +197,52 @@ const AstExplorer = () => {
     [category],
   )
 
+  const handleOpenPopup = () => {
+    const opened = openToolPopup('ast', POPUP)
+    if (opened.status === 'blocked') message.warning('浏览器拦下了这个弹窗，请允许本站弹出窗口')
+    else if (opened.status === 'focused') message.info('AST 弹窗已存在，已聚焦')
+  }
+
+  const bridgeRef = useRef<ReturnType<typeof createBridge> | null>(null)
+
+  useEffect(() => {
+    const bridge = createBridge(POPUP.channelName, (incoming) => {
+      if (incoming.type === 'hello') {
+        // 弹窗刚打开，把主窗口当前这一屏递过去
+        bridge.send({ type: 'state', payload: { ...latestRef.current } })
+        return
+      }
+      if (incoming.type !== 'state' && incoming.type !== 'update') return
+
+      const payload = incoming.payload
+      if (!payload) return
+
+      const nextCategory = findCategory(payload.categoryId ?? '')
+      if (!nextCategory) return
+      const nextParser =
+        nextCategory.parsers.find((item) => item.id === payload.parserId) ?? nextCategory.parsers[0]
+
+      setCategory(nextCategory)
+      setParser(nextParser)
+      if (typeof payload.code === 'string') setCode(payload.code)
+      if (payload.viewType === 'tree' || payload.viewType === 'json') setViewType(payload.viewType)
+    })
+    bridgeRef.current = bridge
+
+    // 弹窗这边喊一声，主窗口会把当前状态回过来
+    if (popup) bridge.send({ type: 'hello' })
+
+    return () => {
+      bridge.close()
+      bridgeRef.current = null
+    }
+  }, [popup])
+
+  const handleSyncToMain = () => {
+    bridgeRef.current?.send({ type: 'update', payload: { ...latestRef.current } })
+    message.success('已同步到主窗口')
+  }
+
   return (
     <div className="ast-tool-root">
       <div className="ast-tool-toolbar">
@@ -194,6 +263,28 @@ const AstExplorer = () => {
           style={{ width: 160 }}
         />
         {loading ? <Spin size="small" /> : null}
+        <span className="ast-tool-toolbar-spacer" />
+        {popup ? (
+          <Tooltip title="同步到主窗口">
+            <Button
+              size="small"
+              type="text"
+              icon={<SyncOutlined />}
+              aria-label="同步到主窗口"
+              onClick={handleSyncToMain}
+            />
+          </Tooltip>
+        ) : (
+          <Tooltip title="弹出到独立窗口">
+            <Button
+              size="small"
+              type="text"
+              icon={<ExportOutlined />}
+              aria-label="弹出到独立窗口"
+              onClick={handleOpenPopup}
+            />
+          </Tooltip>
+        )}
       </div>
 
       <div className="ast-tool-splitter" ref={splitterRef} style={{ height }}>

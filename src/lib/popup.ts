@@ -21,6 +21,11 @@ export interface ToolMessage {
   name?: string | null
   /** 文档来源的 `file://` 地址（Markdown 用：弹窗里也要按文档目录解析本地图片） */
   source?: string | null
+  /**
+   * 工具自己的附加状态。Diff 要同时带两栏内容与语言，AST 要带语言 / 解析器 / 视图，
+   * 一个 value 装不下；这些字段只在本工具的弹窗两端解释，公共层不关心键名。
+   */
+  payload?: Record<string, string>
 }
 
 export interface Bridge {

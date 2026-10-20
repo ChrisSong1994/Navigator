@@ -1,0 +1,32 @@
+/**
+ * URL 解析工具自己的样式。上游只有一条 `.url-parse { margin-top: 20px }`，
+ * 这里跟着工具页的卡片布局补一点宽度与换行，避免长地址把 Descriptions 撑破。
+ */
+
+.url-parse-tool-root {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 900px;
+  /* 工具页的卡片是整宽的，这里把内容收成一列并居中 */
+  margin: 0 auto;
+}
+
+.url-parse-tool-search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.url-parse-tool-search {
+  flex: 1;
+  min-width: 0;
+}
+
+.url-parse-tool-value {
+  word-break: break-all;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+

@@ -14,7 +14,7 @@
 - Bing 壁纸：关闭、从最近 8 天中选取、按间隔自动轮播、自定义图片地址；配置里只持久化一个图片直链
 - Chrome 书签双向同步：手动从书签栏 /「导航精灵」拉取，或把当前配置推送 / 覆盖到书签栏下的「导航精灵」文件夹
 - 数据导入导出：标准配置 JSON，以及 Chrome 书签 HTML
-- 工具箱：顶栏入口弹出工具抽屉，选中后整页打开该工具，左上角返回箭头回首页；目前有颜色工具（取色面板、HEX / RGB / CMYK / HSV / HSL 互转、颜色记录）、JSON 工具（格式化 / 压缩 / 校验并给出行列与出错片段 / 修复 / JSON5 兼容解析 / 转义与去转义 / 上传下载 / 浏览器里打开或首页拖入本机 .json 直接落进来）、Markdown 工具（编辑 + 预览、演示模式（左侧目录、拖入 .md 即渲染、浏览器里打开本机 .md 也落在这里）、GFM、公式、图表、代码高亮、导入导出 .md、保存时可写回源文件）、AST 工具（JS / TS、JSON、YAML 三种语言转 AST，树与 JSON 两种视图，悬停联动源码高亮）和 Transform 工具（JSON / YAML / JavaScript 对象互转 TypeScript、Go、Java、Kotlin、MySQL、JSON Schema），工具界面按需懒加载
+- 工具箱：顶栏入口弹出工具抽屉，选中后整页打开该工具，左上角返回箭头回首页；目前有颜色工具（取色面板、HEX / RGB / CMYK / HSV / HSL 互转、颜色记录）、JSON 工具（格式化 / 压缩 / 校验并给出行列与出错片段 / 修复 / JSON5 兼容解析 / 转义与去转义 / 上传下载 / 浏览器里打开或首页拖入本机 .json 直接落进来）、Markdown 工具（编辑 + 预览、演示模式（左侧目录、拖入 .md 即渲染、浏览器里打开本机 .md 也落在这里）、GFM、公式、图表、代码高亮、导入导出 .md、保存时可写回源文件）、AST 工具（JS / TS、JSON、YAML 三种语言转 AST，树与 JSON 两种视图，悬停联动源码高亮）、Transform 工具（JSON / YAML / JavaScript 对象互转 TypeScript、Go、Java、Kotlin、MySQL、JSON Schema）、Diff 工具（左右文本对比、两边都可编辑、导入 / 拖入文件、26 种语言高亮）和 URL 解析工具（协议 / 主机 / 端口 / 路径 / 哈希 / 查询参数实时拆解），工具界面按需懒加载
 - 扩展弹窗：点扩展图标弹出「收藏当前页 + 工具列表 + 外观开关」，收藏时挑分组（或就地新建）直接写进配置，主题模式 / 展示模式一键切换
 
 ## 数据流
@@ -203,6 +203,7 @@ chrome_bookmarks_demo.html ──pnpm import:bookmarks──▶ global_original.
 
 - 左边 monaco 编辑器，右边两种视图切换：**树**（可展开、点节点跳源码、悬停节点高亮源码）和 **JSON**（整棵 AST 序列化出来看）
 - 语言 / 解析器两个下拉框，解析器是按需 `import()` 的，不选中就不下载（Babel 那份 285 KB 只在打开 AST 工具时才请求）
+- 工具栏最右边可把当前语言 / 解析器 / 源码 / 视图弹出到独立窗口；弹窗里编辑后可「同步到主窗口」回来
 - 树上四个「隐藏」开关（方法 / 空键 / 位置信息 / type 键）加一个「自动聚焦」，都存在 localStorage `navigator.ast.treeSettings`
 - 语法错误不清空整棵树：解析失败时保留上一次的 AST，红条把错误贴在上面（YAML 的 `parseDocument` 不抛异常，所以给解析器加了 `getErrors` 这个钩子来补红条）
 - 编辑器语言跟着解析器走（`editorLanguage`）：上游写死 `javascript`，JSON / YAML 也是按 JS 高亮的
@@ -267,6 +268,30 @@ CompileError: WebAssembly.instantiateStreaming(): ... violates the following Con
 - `JsonToJava` 是按行字符串重写（`substring(11, indexOf('('))` 这种硬编码下标），库本身没有 Java 模式。这里原样留着，但用 `pnpm check:tools` 把它们逐字钉住了，换行一漂就会红
 
 体积：Transform 工具那份 chunk 约 16 KB（gzip 约 5 KB），样式一份 `Transform-*.css` 约 2.5 KB。两个 WASM 与它们的胶水代码只在选中对应转换器时才请求。
+
+### Diff 工具
+
+从 `developer-assistant` 的 `src/renderer/pages/Diff` 搬过来（上游只有一个「语言下拉 + `BaseDiffEditor`」）：
+
+- 左右两栏 monaco 文本对比，两边都可编辑；语言下拉保留上游那 26 个值（`json5` / `toml` 在 monaco 里没有语法实现，选中时按纯文本展示，与上游一致）
+- 空态提示点击图标导入文本文件，文件拖到左侧或右侧就落进对应那一栏。上游这两件事走 Electron（`Events.getFileFromLocalPath` / `file.path`），这里换成公共层的 `pickTextFile` / `readDroppedFile`
+- 编辑器内容放在 ref 里，只在「空 ↔ 非空」时更新提示层状态，不把每个按键回灌给 `DiffEditor`（否则左栏 `setValue` 会重置光标与撤销栈）
+- 主题跟随站点设置，monaco 在浅色 / 深色之间切换；语言着色只在本工具自己的 chunk 里引，不让其他工具白付这份字节
+- 语言下拉右边可弹出到独立窗口，两栏内容与当前语言一起带过去；弹窗里改完可「同步到主窗口」回来
+
+体积：Diff 工具那份 chunk 约 8.2 KB（gzip 约 3.2 KB），样式约 0.85 KB；22 份 basic-language 语法规则按需拆成独立小 chunk，选中对应语言时才加载。
+
+### URL 解析工具
+
+从 `developer-assistant` 的 `src/renderer/pages/UrlParse` 搬过来（上游是「输入框 + Descriptions」）：
+
+- 输入地址时实时解析，不再等点「解析」；展示长度、协议、用户名、密码、主机、端口、路径、哈希与查询参数
+- 查询参数单独用一层 Descriptions 展开，值按 URLSearchParams 解码；重复键与上游一致取最后一个
+- 没输入时展示字段说明当空态；地址非法时输入框标红并给一句「需要包含协议」的提示。上游在解析失败时会把上一次的结果留在页面上，这里改成一失败就不展示旧结果
+- 解析逻辑在 `src/tools/UrlParse/lib/url.ts`，`pnpm check:tools` 有 4 项断言盯着协议去冒号、查询参数、长度口径与非法输入
+- 内容收成一列在页面里居中；输入框右侧可弹出到独立窗口，弹窗里改完可「同步到主窗口」回来
+
+体积：URL 解析工具那份 chunk 约 11.4 KB（gzip 约 4.3 KB），样式约 0.3 KB。
 
 ## 扩展弹窗
 
