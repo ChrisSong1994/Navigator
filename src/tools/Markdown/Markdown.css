@@ -319,6 +319,26 @@
 }
 
 /*
+ * 点图片放大（@bytemd/plugin-medium-zoom → medium-zoom）。
+ *
+ * medium-zoom 把遮罩和放大的那张图都 append 到 document.body 上，但**不带 z-index**；
+ * 而站点的内容层（.spirit-canvas > header / main）是 position: relative + z-index: 1，
+ * antd 的抽屉和弹窗更是 1000 起步。兄弟节点里 z-index: auto 的元素一律排在它们下面 ——
+ * 于是单击图片后遮罩被页面压住，看起来就像「没反应」或者只放大了一小块。
+ *
+ * 这里顶到 CSS 的 z-index 上限：放大看图的层级本来就该压过一切界面元素（工具栏、抽屉、弹窗），
+ * 而它是 modal 式的 —— 关掉才回到页面，不存在「挡住别的浮层」的用法。
+ * 放大图比遮罩再高一层：两者本来就靠 DOM 顺序分先后，写死序号以后不依赖 medium-zoom 的插入顺序。
+ */
+.medium-zoom-overlay {
+  z-index: 2147483646;
+}
+
+.medium-zoom-image--opened {
+  z-index: 2147483647;
+}
+
+/*
  * 「本地图片解析不了」的说明条：只在文档没有来源目录（拖入 / 导入）却又引用了本地图片时出现
  * （判定见 lib/localImages.ts 的 hasLocalImageRefs）。宽度与下面的正文栏对齐（980px）。
  */

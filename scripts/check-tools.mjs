@@ -31,6 +31,12 @@ import {
   imageBaseFromSource,
   resolveLocalImageUrl,
 } from '../src/tools/Markdown/lib/localImages.ts'
+import {
+  LAST_DOCUMENT_KEY,
+  MAX_CONTENT_BYTES,
+  parseLastDocument,
+  serializeLastDocument,
+} from '../src/tools/Markdown/lib/lastDocument.ts'
 import { pickAndWrite, writeIntoHandle } from '../src/tools/Markdown/lib/writeBack.ts'
 import {
   cmykToRgb,
@@ -939,6 +945,65 @@ testAsync('本地文件：只认 file://，别让它变成扩展的通用取数�
 
   // 读不到时那句提示得指到该改的地方（扩展详情里的开关），不然用户没处下手
   assert.match(READ_FILE_HINT, /允许访问文件网址/)
+})
+
+/* 刷新后找回上次那份文档（拖入 / 导入来的没有地址栏凭据） ---------------------- */
+
+test('上次的文档：往返一致，名字 / 来源 / 模式都在', () => {
+  const text = serializeLastDocument({
+    name: '笔记.md',
+    content: '# 笔记\n\n正文',
+    source: 'file:///tmp/notes/%E7%AC%94%E8%AE%B0.md',
+    mode: 'view',
+  })
+  const restored = parseLastDocument(text)
+  assert.equal(restored.name, '笔记.md')
+  assert.equal(restored.content, '# 笔记\n\n正文')
+  assert.equal(restored.source, 'file:///tmp/notes/%E7%AC%94%E8%AE%B0.md')
+  assert.equal(restored.mode, 'view')
+  assert.equal(restored.contentOmitted, false)
+  // 键是固定的那一份，不是历史
+  assert.equal(LAST_DOCUMENT_KEY, 'navigator.markdown.document')
+})
+
+test('上次的文档：清空也算一种状态，刷新后不会又冒出示例文档', () => {
+  const text = serializeLastDocument({ name: null, content: '', source: null, mode: 'edit' })
+  assert.ok(typeof text === 'string', '空文档也该存下来')
+  const restored = parseLastDocument(text)
+  assert.equal(restored.content, '')
+  assert.equal(restored.contentOmitted, false)
+})
+
+test('上次的文档：正文超 1MB 时有来源就只留地址，没来源干脆不写', () => {
+  const huge = 'x'.repeat(MAX_CONTENT_BYTES + 1)
+  // 没来源：存不了也删不得 —— 返回 undefined 表示「这次别动存档」
+  assert.equal(serializeLastDocument({ name: 'big.md', content: huge, source: null, mode: 'edit' }), undefined)
+
+  // 有来源：只留名字 + 地址，恢复时照着地址重读（与历史里 contentOmitted 同一条路）
+  const restored = parseLastDocument(
+    serializeLastDocument({ name: 'big.md', content: huge, source: 'file:///tmp/big.md', mode: 'view' }),
+  )
+  assert.equal(restored.content, '')
+  assert.equal(restored.source, 'file:///tmp/big.md')
+  assert.equal(restored.contentOmitted, true)
+
+  // 刚好到上限还算存得下
+  const exact = parseLastDocument(
+    serializeLastDocument({ name: 'edge.md', content: 'x'.repeat(MAX_CONTENT_BYTES), source: null, mode: 'edit' }),
+  )
+  assert.equal(exact.contentOmitted, false)
+  assert.equal(exact.content.length, MAX_CONTENT_BYTES)
+})
+
+test('上次的文档：坏存档当没存过，不抛异常', () => {
+  for (const raw of [null, '', '不是 JSON', '[]', '{}', '{"content":1}', 'null']) {
+    assert.equal(parseLastDocument(raw), null, `${raw} 应被当成没有存档`)
+  }
+  // 模式认不出来就按编辑模式，不认识的多余字段忽略
+  const restored = parseLastDocument('{"content":"# a","mode":"乱写","extra":1}')
+  assert.equal(restored.mode, 'edit')
+  assert.equal(restored.name, null)
+  assert.equal(restored.source, null)
 })
 
 /* 写回源文件：浏览器里没有「按路径写文件」这回事 ----------------------------- */

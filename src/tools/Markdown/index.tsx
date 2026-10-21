@@ -35,12 +35,14 @@ import { createBridge, isPopupPage, openToolPopup } from '../../lib/popup.ts'
 import { useColorScheme } from '../../hooks/useColorScheme.ts'
 import { useWindowFileDrop } from '../../hooks/useWindowFileDrop.ts'
 import { clearFileQuery, fileFromQuery } from '../query.ts'
+import { useLastDocument } from './hooks/useLastDocument.ts'
 import { MarkdownEditor } from './MarkdownEditor.tsx'
 import { MarkdownRender } from './MarkdownRender.tsx'
 import { SaveSourceModal } from './components/SaveSourceModal.tsx'
 import { Toolbar } from './components/Toolbar.tsx'
 import { useThemeStylesheets } from './hooks/useThemeStylesheets.ts'
 import { MARKDOWN_FILE_KIND } from './lib/kind.ts'
+import { readLastDocument } from './lib/lastDocument.ts'
 import { imageBaseFromSource } from './lib/localImages.ts'
 import type { MarkdownMode } from './lib/mode.ts'
 import { createSourceHandleStore } from './lib/sourceHandle.ts'
@@ -91,13 +93,34 @@ const MarkdownTool = () => {
   /** 读不到地址栏那份文件时的说明，落在演示模式的空态里（见 MarkdownRender 的 emptyReason） */
   const [readFailure, setReadFailure] = useState<string | null>(null)
 
-  const [value, setValue] = useState(handoff?.content ?? (fileAddress ? '' : SAMPLE))
-  const [currentFileName, setCurrentFileName] = useState<string | null>(handoff?.name ?? null)
+  /*
+   * 上次开着的那份文档（见 lib/lastDocument.ts）。拖入 / 导入 / 历史回填来的文档没有地址栏凭据，
+   * 刷新后本该只剩示例文档 —— 那份存档就是给这种情况垫底的。首页交接和 `?file=` 优先：
+   * 前者是刚拖进来的新文档，后者每次刷新都按磁盘上的新版重读，都不该被旧存档盖住。
+   *
+   * 渲染期读一次就行（读不是副作用），和 handoff 同一个路子。
+   */
+  const [restored] = useState(() => (handoff || fileAddress ? null : readLastDocument()))
+  /**
+   * 当前这份文档是不是已经就位。两种情况下先不是：地址栏那份还在读（正文空着）、
+   * 恢复出来的那份正文太大没存下来（要照来源地址重读一遍）。
+   * 只有就位之后才让存档跟着写，否则空正文会把上一份存档顶掉（见 hooks/useLastDocument.ts）。
+   */
+  const [documentReady, setDocumentReady] = useState(
+    () => !fileAddress && !(restored?.contentOmitted ?? false),
+  )
+
+  const [value, setValue] = useState(
+    handoff?.content ?? restored?.content ?? (fileAddress ? '' : SAMPLE),
+  )
+  const [currentFileName, setCurrentFileName] = useState<string | null>(
+    handoff?.name ?? restored?.name ?? null,
+  )
   /**
    * 当前这份文档来自哪个本地文件（`file://` 地址）。有它「保存」才谈得上写回源文件；换成别的
    * 来源（拖入 / 导入 / 另存为）就没了。它跟着历史走，从历史里回填时也会一起回来。
    */
-  const [source, setSource] = useState<string | null>(null)
+  const [source, setSource] = useState<string | null>(restored?.source ?? null)
   /**
    * 相对图片路径的解析基准（文档所在目录，`file:///…/`）。
    * 只有知道这份文档来自哪个本地文件时才有；拖入 / 导入的 `File` 连路径都拿不到，留空。
@@ -109,8 +132,13 @@ const MarkdownTool = () => {
   const [history, setHistory] = useState<HistoryItem[]>(() =>
     handoff ? HISTORY.add(HISTORY.read(), handoff.name, handoff.content) : HISTORY.read(),
   )
-  /** 打开工具默认编辑模式；整窗拖入（含首页交接）与地址栏那份会自动切到演示模式 */
-  const [mode, setMode] = useState<MarkdownMode>(handoff || fileAddress ? 'view' : 'edit')
+  /**
+   * 打开工具默认编辑模式；整窗拖入（含首页交接）与地址栏那份会自动切到演示模式。
+   * 恢复出来的那份按存档时停的模式来（上次是在看文档，刷新后不该跳回编辑器）。
+   */
+  const [mode, setMode] = useState<MarkdownMode>(
+    handoff || fileAddress ? 'view' : (restored?.mode ?? 'edit'),
+  )
   // 地址栏带 popup=1 就是那个被弹出来的窗口：工具栏最后一位换成「同步到主窗口」
   const [popup] = useState(isPopupPage)
 
@@ -124,6 +152,22 @@ const MarkdownTool = () => {
 
   const scheme = useColorScheme()
   useThemeStylesheets(scheme)
+
+  /*
+   * 当前这份文档持续存档：刷新后还能看到它（见 lib/lastDocument.ts 与 hooks/useLastDocument.ts）。
+   *
+   * 弹窗那份不写：它只是主窗口的一面镜子（内容靠 BroadcastChannel 同步过来），刚打开时手里还是示例文档，
+   * 让它写就会把主窗口正在看的那份顶掉 —— 尤其是主窗口已经关掉、hello 没人应答的时候。
+   * 读还是照读：直接打开弹窗页（`?tool=markdown&popup=1`）时，有存档总比一进来就是示例文档好。
+   *
+   * 示例文档原封不动时也不写：那是「还没打开过任何文档」，不是一份文档。存下来以后，第一回进来看到的
+   * 就是那天那份旧 sample.md 了，站点更新示例也看不到。改过（或另存 / 有来源）才当归档。
+   */
+  const pristineSample = !currentFileName && !source && value === SAMPLE
+  useLastDocument(
+    { name: currentFileName, content: value, source, mode },
+    documentReady && !popup && !pristineSample,
+  )
 
   // 改一次存一次。历史最多 20 条、内容也有上限，不值得为它做合并写入
   const rememberHistory = (items: HistoryItem[]) => {
@@ -156,6 +200,8 @@ const MarkdownTool = () => {
     }
     if (render) setMode('view')
     setReadFailure(null)
+    // 手里这份已经是新文档了，存档可以跟着写（地址栏那份还在读的时候是被压住的，见上面 documentReady）
+    setDocumentReady(true)
     // 现在开着的是另一份文档了，地址栏那个 ?file= 作废 —— 留着的话「返回首页」再点进本工具
     // 又会把那份文件读一遍。只有它自己读出来的那份留着，刷新页面才能看到磁盘上的新版
     if (!keepQuery) clearFileQuery()
@@ -178,16 +224,49 @@ const MarkdownTool = () => {
     const wanted = () => alive && fileFromQuery() === fileAddress
     readUrlDocument(fileAddress).then(
       (file) => {
-        if (wanted()) openRef.current(file, { render: true, keepQuery: true, source: fileAddress })
+        if (!wanted()) return
+        openRef.current(file, { render: true, keepQuery: true, source: fileAddress })
       },
       () => {
         if (wanted()) setReadFailure(READ_FILE_HINT)
       },
     )
+    // 这里不 finally 放行存档：读成功时 openDocument 已经放行，被别的入口顶掉时那边也放行了；
+    // 只有「读不到」还压着 —— 这一屏是空态，正文是空串，照写会把上一份存档顶掉（见上面 documentReady）。
     return () => {
       alive = false
     }
   }, [fileAddress])
+
+  // 恢复出来的那份要是来自本地文件，把记着的句柄捞进内存：一会儿点「保存」要同步判断在不在手上，
+  // 而且确认框里那句提示也跟着变（与从历史回填走 openDocument 时同一件事）
+  useEffect(() => {
+    if (restored?.source) void SOURCES.preload(restored.source)
+  }, [restored])
+
+  // 恢复出来的那份正文太大没存下来（见 lib/lastDocument.ts）：有来源地址就照着地址重读一遍，
+  // 读不到就按 READ_FILE_HINT 说清怎么办（和历史里 contentOmitted 那条同样处理）。
+  // 只在没有交接、也没有 `?file=` 时才会走到这里，两处的「读文件」不会叠在一起。
+  useEffect(() => {
+    if (!restored?.contentOmitted || !restored.source) return
+    let alive = true
+    readUrlDocument(restored.source).then(
+      (file) => {
+        if (!alive) return
+        setValue(file.content)
+        setCurrentFileName(file.name)
+      },
+      () => {
+        // 读不回来也要放行存档写入：否则这一屏什么都记不下来
+        if (alive) setReadFailure(READ_FILE_HINT)
+      },
+    ).finally(() => {
+      if (alive) setDocumentReady(true)
+    })
+    return () => {
+      alive = false
+    }
+  }, [restored])
 
   const handleImport = async () => {
     const picked = await pickTextFile(MARKDOWN_FILE_KIND.accept)
@@ -257,6 +336,8 @@ const MarkdownTool = () => {
   const handleClear = () => {
     setValue('')
     setCurrentFileName(null)
+    // 清空是用户自己定的状态，存档要跟着记（见 hooks/useLastDocument.ts）
+    setDocumentReady(true)
     // 地址栏那份也不要了，不然一刷新它又回来
     setReadFailure(null)
     setSource(null)
@@ -372,7 +453,16 @@ const MarkdownTool = () => {
       />
 
       {mode === 'edit' ? (
-        <MarkdownEditor value={value} imageBase={imageBase} onChange={setValue} />
+        <MarkdownEditor
+          value={value}
+          imageBase={imageBase}
+          // 一动笔这份文档就是用户自己的了：存档从这一刻起跟着写
+          // （地址栏 / 存档那份还没读回来时依旧不写，见上面 documentReady）
+          onChange={(next) => {
+            setDocumentReady(true)
+            setValue(next)
+          }}
+        />
       ) : (
         <MarkdownRender
           value={value}
