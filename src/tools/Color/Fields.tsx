@@ -1,4 +1,3 @@
-import { BgColorsOutlined } from '@ant-design/icons'
 import { Button, Col, Row, Tooltip, message } from 'antd'
 
 import EditableInput from './EditableInput.tsx'
@@ -13,6 +12,31 @@ import type { Cmyk, ColorKind, Hsl, Hsv, Rgb } from './lib/color.ts'
 
 /** 原版写死 span={6}，窄屏会挤成一团，这里按断点摊开 */
 const FIELD_COL = { xs: 24, sm: 12, lg: 6 }
+
+/**
+ * 吸管图标。@ant-design/icons 里没有滴管（只有 BgColors / FontColors），
+ * 照 antd 图标的约定画一个：24px、currentColor 描边，随按钮文字色走，暗色模式不用另配。
+ */
+function EyeDropperIcon() {
+  return (
+    <svg
+      width={20}
+      height={20}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="m2 22 1-1h3l9-9" />
+      <path d="M3 21v-3l9-9" />
+      <path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z" />
+    </svg>
+  )
+}
 
 type EyeDropperCtor = new () => { open: () => Promise<{ sRGBHex: string }> }
 
@@ -64,7 +88,7 @@ export default function Fields({ rgb, hsl, hsv, cmyk, hex, onChange }: FieldsPro
                 type="text"
                 aria-label="吸取颜色"
                 style={{ margin: '0 8px' }}
-                icon={<BgColorsOutlined />}
+                icon={<EyeDropperIcon />}
                 onClick={handleEyeDropper}
               />
             </Tooltip>

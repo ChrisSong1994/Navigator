@@ -33,7 +33,7 @@ export interface HistoryItem {
   /**
    * 这份文档当初是从哪个本地文件来的（`file://` 地址）：Markdown / JSON 从地址栏 `?file=`
    * 打开时记下。Markdown 回填时跟着回来，于是「保存」还能问一句要不要写回源文件
-   * （见 tools/Markdown/lib/writeBack.ts）；两个工具都靠它在内容过大没留下来时重新读取。
+   * （见 lib/writeBack.ts）；两个工具都靠它在内容过大没留下来时重新读取。
    * 不进去重键：同一个文件名还是同一条历史，只是内容换成了新来源。
    */
   source?: string

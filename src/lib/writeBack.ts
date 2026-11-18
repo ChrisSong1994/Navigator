@@ -1,5 +1,5 @@
 /**
- * 把编辑中的内容写回它原来那个本地文件（`file://` 打开的那份）。
+ * 把编辑中的内容写回它原来那个本地文件（`file://` 打开的那份）。Markdown 与 JSON 共用。
  *
  * 浏览器里没有「按路径写文件」这回事：扩展拿不到路径，`fetch(file://…, { method: 'PUT' })`
  * 看着返回 200，磁盘上一个字节都没动（试过）。能写的只有 `FileSystemFileHandle`，
@@ -11,8 +11,7 @@
  *
  * 客户端里只有「要不要弹框」这点差别，所以对外就是一个 writeIntoHandle 加一个 pickAndWrite。
  */
-import { pickSaveHandle } from '../../../lib/file.ts'
-import { MARKDOWN_FILE_KIND } from './kind.ts'
+import { type SavePickerOptions, type TextFileKind, pickSaveHandle } from './file.ts'
 
 export type WriteResult =
   | { status: 'written'; name: string; handle: FileSystemFileHandle }
@@ -69,9 +68,17 @@ export async function writeIntoHandle(
 /**
  * 弹一次系统保存框选定文件再写进去。第一次写回源文件、以及「另存为…」都走这里 ——
  * 对用户来说是两件事，对浏览器来说都是「选个文件写进去」。
+ *
+ * `options` 决定保存框开在哪儿（见 lib/file.ts 的 SavePickerOptions）：
+ * 句柄能把框精确带到源文件所在目录，纯路径只能靠约定目录名 + picker id 尽量靠近。
  */
-export async function pickAndWrite(content: string, suggestedName: string): Promise<WriteResult> {
-  const handle = await pickSaveHandle(suggestedName, MARKDOWN_FILE_KIND)
+export async function pickAndWrite(
+  content: string,
+  suggestedName: string,
+  kind: TextFileKind,
+  options: SavePickerOptions = {},
+): Promise<WriteResult> {
+  const handle = await pickSaveHandle(suggestedName, kind, options)
   if (handle === null) return { status: 'cancelled' }
   if (handle === undefined) return { status: 'unsupported' }
   return writeIntoHandle(handle, content)

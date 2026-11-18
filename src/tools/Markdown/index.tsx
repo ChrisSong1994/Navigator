@@ -27,6 +27,7 @@ import {
   READ_FILE_HINT,
   readDroppedFile,
   readUrlDocument,
+  savePickerOptionsFor,
   saveTextFile,
 } from '../../lib/file.ts'
 import { isMarkdownLike, MARKDOWN_REJECT_MESSAGE } from '../../lib/markdown.ts'
@@ -38,15 +39,15 @@ import { clearFileQuery, fileFromQuery } from '../query.ts'
 import { useLastDocument } from './hooks/useLastDocument.ts'
 import { MarkdownEditor } from './MarkdownEditor.tsx'
 import { MarkdownRender } from './MarkdownRender.tsx'
-import { SaveSourceModal } from './components/SaveSourceModal.tsx'
+import { SaveSourceModal } from '../../components/SaveSourceModal.tsx'
 import { Toolbar } from './components/Toolbar.tsx'
 import { useThemeStylesheets } from './hooks/useThemeStylesheets.ts'
 import { MARKDOWN_FILE_KIND } from './lib/kind.ts'
 import { readLastDocument } from './lib/lastDocument.ts'
 import { imageBaseFromSource } from './lib/localImages.ts'
 import type { MarkdownMode } from './lib/mode.ts'
-import { createSourceHandleStore } from './lib/sourceHandle.ts'
-import { pickAndWrite, writeIntoHandle } from './lib/writeBack.ts'
+import { createSourceHandleStore } from '../../lib/sourceHandle.ts'
+import { pickAndWrite, writeIntoHandle } from '../../lib/writeBack.ts'
 import SAMPLE from './sample.md?raw'
 import './Markdown.css'
 
@@ -302,9 +303,15 @@ const MarkdownTool = () => {
     const url = source
     if (!url) return
     const known = SOURCES.peek(url)
+    const location = savePickerOptionsFor(url)
     const result = known
       ? await writeIntoHandle(known, value)
-      : await pickAndWrite(value, fileNameFromUrl(url))
+      : await pickAndWrite(value, fileNameFromUrl(url), MARKDOWN_FILE_KIND, {
+          // 同一个目录里有别的文件写过回，那个句柄能把框精确带到这个目录；
+          // 没有就只能用约定目录名与按目录记忆的 id 尽量靠近（见 lib/file.ts）
+          startIn: SOURCES.peekDirectory(url) ?? location.startIn,
+          id: location.id,
+        })
 
     if (result.status === 'cancelled') return
 

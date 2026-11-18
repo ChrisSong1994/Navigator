@@ -23,8 +23,14 @@ import { isMarkdownLike, MARKDOWN_EXTENSIONS } from '../src/lib/markdown.ts'
 import { formatTime, isEmpty } from '../src/lib/util.ts'
 import { JSON_FILE_KIND } from '../src/tools/Json/lib/kind.ts'
 import { MARKDOWN_FILE_KIND } from '../src/tools/Markdown/lib/kind.ts'
-import { READ_FILE_HINT, fileNameFromUrl, readUrlDocument } from '../src/lib/file.ts'
-import { createSourceHandleStore } from '../src/tools/Markdown/lib/sourceHandle.ts'
+import {
+  READ_FILE_HINT,
+  fileNameFromUrl,
+  pickerIdForPath,
+  readUrlDocument,
+  wellKnownDirectoryOf,
+} from '../src/lib/file.ts'
+import { createSourceHandleStore } from '../src/lib/sourceHandle.ts'
 import {
   allowLocalImageProtocols,
   hasLocalImageRefs,
@@ -37,7 +43,7 @@ import {
   parseLastDocument,
   serializeLastDocument,
 } from '../src/tools/Markdown/lib/lastDocument.ts'
-import { pickAndWrite, writeIntoHandle } from '../src/tools/Markdown/lib/writeBack.ts'
+import { pickAndWrite, writeIntoHandle } from '../src/lib/writeBack.ts'
 import {
   cmykToRgb,
   derive,
@@ -1073,7 +1079,7 @@ testAsync('写回源文件：权限、文件没了、写失败要分开——改
 
 testAsync('写回源文件：第一次要靠系统框选定文件，取消与不支持都得与「写成了」分开', async () => {
   const { handle, written } = fakeHandle('a.md')
-  const picked = await withSavePicker(async () => handle, () => pickAndWrite('# hi', 'a.md'))
+  const picked = await withSavePicker(async () => handle, () => pickAndWrite('# hi', 'a.md', MARKDOWN_FILE_KIND))
   assert.equal(picked.status, 'written')
   assert.equal(picked.name, 'a.md')
   assert.deepEqual(written, ['# hi'])
@@ -1084,11 +1090,98 @@ testAsync('写回源文件：第一次要靠系统框选定文件，取消与不
     error.name = 'AbortError'
     throw error
   }
-  assert.equal((await withSavePicker(abort, () => pickAndWrite('# hi', 'a.md'))).status, 'cancelled')
+  assert.equal((await withSavePicker(abort, () => pickAndWrite('# hi', 'a.md', MARKDOWN_FILE_KIND))).status, 'cancelled')
 
   // 浏览器没有这套 API（Firefox）：窗口在、方法不在，跟用户取消是两回事
-  const unsupported = await withSavePicker(undefined, () => pickAndWrite('# hi', 'a.md'))
+  const unsupported = await withSavePicker(undefined, () => pickAndWrite('# hi', 'a.md', MARKDOWN_FILE_KIND))
   assert.equal(unsupported.status, 'unsupported')
+})
+
+testAsync('写回源文件：系统框的定位参数原样传下去，句柄失效时去掉它重试', async () => {
+  const { handle } = fakeHandle('a.md')
+  const calls = []
+  const picker = async (options) => {
+    calls.push(options)
+    return handle
+  }
+
+  // 同目录句柄（startIn）和按目录记忆的 id 都要交给 showSaveFilePicker
+  const dirHandle = fakeHandle('sibling.md').handle
+  await withSavePicker(picker, () =>
+    pickAndWrite('# hi', 'a.md', MARKDOWN_FILE_KIND, { startIn: dirHandle, id: 'd-abc123' }),
+  )
+  assert.equal(calls[0].startIn, dirHandle)
+  assert.equal(calls[0].id, 'd-abc123')
+  assert.equal(calls[0].suggestedName, 'a.md')
+  assert.deepEqual(calls[0].types[0].accept, { 'text/markdown': ['.md'] })
+
+  // JSON 工具共用同一套写回逻辑：文件类型只是换成 kind 里那份
+  const jsonCalls = []
+  await withSavePicker(
+    async (options) => {
+      jsonCalls.push(options)
+      return handle
+    },
+    () => pickAndWrite('{}', 'a.json', JSON_FILE_KIND, { id: 'd-json' }),
+  )
+  assert.equal(jsonCalls[0].suggestedName, 'a.json')
+  assert.equal(jsonCalls[0].id, 'd-json')
+  assert.deepEqual(jsonCalls[0].types[0].accept, { 'application/json': ['.json'] })
+
+  // startIn 指的句柄失效（文件被删 / 权限收紧）：浏览器在弹框前抛错，
+  // 去掉 startIn 再弹一次，不能把「定位失败」变成「保存失败」
+  const retryCalls = []
+  let failedOnce = false
+  const flaky = async (options) => {
+    retryCalls.push(options)
+    if (options.startIn && !failedOnce) {
+      failedOnce = true
+      throw new TypeError('invalid startIn')
+    }
+    return handle
+  }
+  const retried = await withSavePicker(flaky, () =>
+    pickAndWrite('# hi', 'a.md', MARKDOWN_FILE_KIND, { startIn: dirHandle, id: 'd-abc123' }),
+  )
+  assert.equal(retried.status, 'written')
+  assert.equal(retryCalls.length, 2)
+  assert.equal(retryCalls[1].startIn, undefined)
+  assert.equal(retryCalls[1].id, 'd-abc123', 'id 不依赖句柄，重试时还要留着')
+})
+
+test('保存框定位：约定目录认得系统那几个标准文件夹', () => {
+  assert.equal(wellKnownDirectoryOf('file:///Users/me/Documents/a.md'), 'documents')
+  assert.equal(wellKnownDirectoryOf('file:///Users/me/Documents/notes/a.md'), 'documents')
+  assert.equal(wellKnownDirectoryOf('file:///Users/me/Desktop/a.md'), 'desktop')
+  assert.equal(wellKnownDirectoryOf('file:///home/me/Downloads/a.md'), 'downloads')
+  assert.equal(wellKnownDirectoryOf('file:///Users/me/Movies/a.md'), 'videos')
+  assert.equal(wellKnownDirectoryOf('file:///C:/Users/me/Pictures/a.md'), 'pictures')
+  // 工作目录之类不在约定目录里的，只能靠 id 记忆，没法直接指
+  assert.equal(wellKnownDirectoryOf('file:///Users/me/WorkSpace/a.md'), undefined)
+  assert.equal(wellKnownDirectoryOf('https://example.com/a.md'), undefined)
+})
+
+test('保存框定位：按源文件目录生成稳定且合法的 picker id', () => {
+  const id = pickerIdForPath('file:///Users/me/notes/a.md')
+  assert.ok(id, '本地文件应该有一个 id')
+  assert.match(id, /^[a-zA-Z0-9_-]{1,32}$/, 'id 只允许字母数字 / _ / -，最长 32')
+  // 同一目录共用同一个 id（保存框会记在这个目录上），不同目录不同
+  assert.equal(id, pickerIdForPath('file:///Users/me/notes/b.md'))
+  assert.notEqual(id, pickerIdForPath('file:///Users/me/other/a.md'))
+  assert.equal(pickerIdForPath('https://example.com/a.md'), undefined)
+})
+
+testAsync('源文件句柄：同目录下别的文件的句柄能当保存框的定位器', async () => {
+  const store = createSourceHandleStore()
+  const { handle } = fakeHandle('a.md')
+
+  // 先记下 notes/a.md 的句柄
+  store.remember('file:///Users/me/notes/a.md', handle)
+  // 同目录另一份文件：自己没句柄，但目录提示能拿到
+  assert.equal(store.peek('file:///Users/me/notes/b.md'), null)
+  assert.equal(store.peekDirectory('file:///Users/me/notes/b.md'), handle)
+  // 别的目录没有这样的提示
+  assert.equal(store.peekDirectory('file:///Users/me/other/b.md'), null)
 })
 
 testAsync('源文件句柄：内存那份先认，忘掉之后就当没记过', async () => {

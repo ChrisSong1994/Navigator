@@ -131,33 +131,6 @@
   white-space: nowrap;
 }
 
-/* 「要写回源文件吗」那个确认框 ------------------------------------------------
- * 弹窗挂在 body 上（antd 的 portal），所以这几个类名不能嵌在 .markdown-tool-root 里
- */
-
-.markdown-tool-save-source-text {
-  margin: 0 0 8px;
-}
-
-.markdown-tool-save-source-path {
-  display: block;
-  padding: 6px 8px;
-  /* 本地文件路径往往很长，横向滚动而不是把弹窗撑宽 */
-  overflow-x: auto;
-  border-radius: 6px;
-  background: var(--spirit-inset);
-  color: var(--spirit-text);
-  font-size: 12px;
-  white-space: pre;
-}
-
-.markdown-tool-save-source-hint {
-  margin: 10px 0 0;
-  color: var(--spirit-muted);
-  font-size: 12px;
-  line-height: 1.7;
-}
-
 /* 编辑器 ------------------------------------------------------------------ */
 
 .markdown-tool-editor {

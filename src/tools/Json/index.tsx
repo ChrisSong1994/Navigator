@@ -9,6 +9,7 @@
  * 6、支持 json5
  * 7、JSONPath 查询 / 结构图 / 历史记录 / 弹出到独立窗口
  * 8、浏览器里打开本机的 .json：扩展把那个 file:// 导航换成 ?file= 落到这里（读文件见公共层 lib/file.ts）
+ * 9、编辑这份文件之后保存，问一句要不要写回它（见 lib/writeBack.ts 与 lib/sourceHandle.ts）
  */
 import { Alert, Splitter, message } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -17,7 +18,15 @@ import { GraphView } from './GraphView/index.tsx'
 import JsonPath from './JsonPath/index.tsx'
 import JsonEditor from './components/Editor/JsonEditor.tsx'
 import { Toolbar } from './components/Toolbar.tsx'
-import { pickTextFile, READ_FILE_HINT, readUrlDocument, saveTextFile } from '../../lib/file.ts'
+import { SaveSourceModal } from '../../components/SaveSourceModal.tsx'
+import {
+  fileNameFromUrl,
+  pickTextFile,
+  READ_FILE_HINT,
+  readUrlDocument,
+  savePickerOptionsFor,
+  saveTextFile,
+} from '../../lib/file.ts'
 import { JSON_FILE_KIND } from './lib/kind.ts'
 import { createHistoryStore } from '../../lib/history.ts'
 import type { HistoryItem } from '../../lib/history.ts'
@@ -27,6 +36,8 @@ import { formatJson, minifyJson, parseJsonText, repairJsonText } from './lib/jso
 import type { JsonParseError } from './lib/json.ts'
 import { isEmpty } from '../../lib/util.ts'
 import { createBridge, isPopupPage, openToolPopup } from '../../lib/popup.ts'
+import { createSourceHandleStore } from '../../lib/sourceHandle.ts'
+import { pickAndWrite, writeIntoHandle } from '../../lib/writeBack.ts'
 import { useFillHeight } from '../../hooks/useFillHeight.ts'
 import './Json.css'
 
@@ -35,6 +46,9 @@ const FILL_STYLE = { height: '100%' }
 
 /** 本工具在公共层里的身份：历史存哪儿、弹窗叫什么（文件类型见 lib/kind.ts） */
 const HISTORY = createHistoryStore('navigator.json.history')
+
+/** 记住哪个 file:// 地址是磁盘上的哪个文件，写回源文件时用（见 lib/sourceHandle.ts） */
+const SOURCES = createSourceHandleStore()
 
 const POPUP = {
   windowName: 'navigator-json-popup',
@@ -68,6 +82,13 @@ const JsonTool = () => {
 
   const [value, setValue] = useState(handoff?.content ?? '')
   const [currentFileName, setCurrentFileName] = useState<string | null>(handoff?.name ?? null)
+  /**
+   * 当前这份内容来自哪个本地文件（`file://` 地址）。有它「保存」才谈得上写回源文件；
+   * 换成别的来源（拖入 / 导入 / 另存为）就没了。它跟着历史走，从历史里回填时也会一起回来。
+   */
+  const [source, setSource] = useState<string | null>(null)
+  /** 「要写回源文件吗」那个确认框开着没有 */
+  const [confirmSave, setConfirmSave] = useState(false)
   // 交接过来这份也算一条历史；HISTORY.add 只做纯计算，落盘同样在 effect 里
   const [history, setHistory] = useState<HistoryItem[]>(() =>
     handoff ? HISTORY.add(HISTORY.read(), handoff.name, handoff.content) : HISTORY.read(),
@@ -116,6 +137,9 @@ const JsonTool = () => {
         if (!wanted()) return
         setValue(file.content)
         setCurrentFileName(file.name)
+        setSource(fileAddress)
+        // 先把这份文件记着的句柄捞进内存，一会儿「保存」要同步判断在不在手上
+        void SOURCES.preload(fileAddress)
         setReadFailure(null)
         const items = HISTORY.add(HISTORY.read(), file.name, file.content, { source: fileAddress })
         setHistory(items)
@@ -133,10 +157,13 @@ const JsonTool = () => {
   /**
    * 换一份内容进来（导入 / 清空 / 历史回填）：地址栏那个 ?file= 作废 —— 留着的话刷新页面
    * 会把旧文件读回来，盖掉用户刚选的这份。只有地址栏自己读出来的那份留着参数（那个 effect 不经过这里）。
+   * `source` 只有历史回填（当初从本地文件打开的那条）才带得回来。
    */
-  const replaceContent = (content: string, name: string | null) => {
+  const replaceContent = (content: string, name: string | null, source: string | null = null) => {
     setValue(content)
     setCurrentFileName(name)
+    setSource(source)
+    if (source) void SOURCES.preload(source)
     setReadFailure(null)
     clearFileQuery()
   }
@@ -147,11 +174,68 @@ const JsonTool = () => {
     replaceContent(picked.content, picked.name)
   }
 
-  const handleSave = async () => {
+  /**
+   * 另存为 / 没有来源时的普通保存：都是「过一个系统保存框挑个文件写进去」。
+   * 存完这份内容就归新文件了 —— 原来那个源文件不再是来源，别再问要不要写回它。
+   */
+  const saveAsNewFile = async () => {
     const saved = await saveTextFile(value, currentFileName ?? 'Untitled.json', JSON_FILE_KIND)
     if (!saved) return
     setCurrentFileName(saved.name)
+    setSource(null)
     rememberHistory(HISTORY.add(history, saved.name, value))
+  }
+
+  const handleSave = () => {
+    // 从本地文件打开的那份：先问一句。浏览器里写回要用户选定文件，问清楚了才不显得莫名其妙
+    if (source) {
+      setConfirmSave(true)
+      return
+    }
+    void saveAsNewFile()
+  }
+
+  const closeConfirmSave = () => setConfirmSave(false)
+
+  /** 写回源文件：手上有句柄就直接写，没有就先弹一次系统保存框把它拿到手（见 lib/writeBack.ts） */
+  const writeBackToSource = async () => {
+    const url = source
+    if (!url) return
+    const known = SOURCES.peek(url)
+    const location = savePickerOptionsFor(url)
+    const result = known
+      ? await writeIntoHandle(known, value)
+      : await pickAndWrite(value, fileNameFromUrl(url), JSON_FILE_KIND, {
+          // 同目录写过回的文件能把框精确带到这个目录；没有就用约定目录名与 picker id 尽量靠近
+          startIn: SOURCES.peekDirectory(url) ?? location.startIn,
+          id: location.id,
+        })
+
+    if (result.status === 'cancelled') return
+
+    if (result.status === 'unsupported') {
+      message.warning('这个浏览器不能写回本地文件，改用「另存为…」')
+      await saveAsNewFile()
+      return
+    }
+
+    if (result.status === 'blocked') {
+      // 文件被删 / 挪走 / 权限没给：句柄废了，忘掉它下次好重新选
+      SOURCES.forget(url)
+      message.warning('这个文件写不进去了（可能被删掉、挪走了），改用「另存为…」存一份吧')
+      return
+    }
+
+    if (result.status === 'failed') {
+      message.error(`写回失败：${result.reason}`)
+      return
+    }
+
+    // 写回成功。句柄可能刚拿到（第一次），也可能换了另一个文件，都记到这份来源地址上
+    SOURCES.remember(url, result.handle)
+    setCurrentFileName(result.name)
+    rememberHistory(HISTORY.add(history, result.name, value, { source: url }))
+    message.success(`已写回 ${result.name}`)
   }
 
   // 美化 / 压缩：内容解析不通就什么都不做（原项目同样）
@@ -189,14 +273,15 @@ const JsonTool = () => {
    */
   const handlePickHistory = async (item: HistoryItem) => {
     if (!item.contentOmitted) {
-      replaceContent(item.content, item.name)
+      // 历史里带着源文件地址（当初打开它的那个 file://），回填时一起回来
+      replaceContent(item.content, item.name, item.source ?? null)
       return
     }
     const url = item.source
     if (!url) return
     try {
       const file = await readUrlDocument(url)
-      replaceContent(file.content, file.name)
+      replaceContent(file.content, file.name, url)
       // 内容重新到手了，把这条历史补全（如果它还是超过 256 KB，就仍然只留名字和时间）。
       // 从存储里重新读再算，别用点击时闭包里的那份：读文件是异步的，中途历史可能已经变了
       rememberHistory(HISTORY.add(HISTORY.read(), file.name, file.content, { source: url }))
@@ -226,12 +311,12 @@ const JsonTool = () => {
     else if (result.status === 'focused') message.info('JSON 弹窗已存在，已聚焦')
   }
 
-  // 弹窗与主窗口之间的桥。回调里要用到最新的 value / currentFileName，又不想每次改动都重建通道
-  // （重建的瞬间会漏消息），所以走 ref 读最新值
-  const latestRef = useRef({ value, currentFileName })
+  // 弹窗与主窗口之间的桥。回调里要用到最新的 value / currentFileName / source，又不想每次改动都重建通道
+  // （重建的瞬间会漏消息），所以走 ref 读最新值。source 也要同步：弹窗里同样可能写回源文件
+  const latestRef = useRef({ value, currentFileName, source })
   useEffect(() => {
-    latestRef.current = { value, currentFileName }
-  }, [value, currentFileName])
+    latestRef.current = { value, currentFileName, source }
+  }, [value, currentFileName, source])
 
   const bridgeRef = useRef<ReturnType<typeof createBridge> | null>(null)
 
@@ -243,12 +328,15 @@ const JsonTool = () => {
           type: 'state',
           value: latestRef.current.value,
           name: latestRef.current.currentFileName,
+          source: latestRef.current.source,
         })
         return
       }
       if (incoming.type === 'state' || incoming.type === 'update') {
         setValue(incoming.value ?? '')
         setCurrentFileName(incoming.name ?? null)
+        setSource(incoming.source ?? null)
+        if (incoming.source) void SOURCES.preload(incoming.source)
       }
     })
     bridgeRef.current = bridge
@@ -263,9 +351,9 @@ const JsonTool = () => {
   }, [popup])
 
   const handleSyncToMain = useCallback(() => {
-    bridgeRef.current?.send({ type: 'update', value, name: currentFileName })
+    bridgeRef.current?.send({ type: 'update', value, name: currentFileName, source })
     message.success('已同步到主窗口')
-  }, [value, currentFileName])
+  }, [value, currentFileName, source])
 
   return (
     <div className="json-tool-root">
@@ -326,6 +414,22 @@ const JsonTool = () => {
           ) : null}
         </Splitter>
       </div>
+
+      {confirmSave && source ? (
+        <SaveSourceModal
+          url={source}
+          cached={SOURCES.peek(source) !== null}
+          onWriteBack={() => {
+            closeConfirmSave()
+            void writeBackToSource()
+          }}
+          onSaveAs={() => {
+            closeConfirmSave()
+            void saveAsNewFile()
+          }}
+          onCancel={closeConfirmSave}
+        />
+      ) : null}
     </div>
   )
 }

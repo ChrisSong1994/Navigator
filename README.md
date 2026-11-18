@@ -27,7 +27,7 @@
 | 工具 | 能力 |
 | --- | --- |
 | 颜色 | 取色面板、HEX / RGB / CMYK / HSV / HSL 互转、颜色记录 |
-| JSON | 格式化 / 压缩 / 校验 / 修复 / JSON5、JSONPath、结构图、转义、历史 |
+| JSON | 格式化 / 压缩 / 校验 / 修复 / JSON5、JSONPath、结构图、转义、历史、写回源文件 |
 | Markdown | 编辑 + 预览 + 演示模式、GFM、公式、图表、导入导出、写回源文件 |
 | AST | JS / TS、JSON、YAML 转 AST，树与 JSON 两种视图，悬停联动高亮 |
 | Transform | JSON / YAML / JavaScript 对象互转 TypeScript、Go、Java、Kotlin、MySQL、JSON Schema |
