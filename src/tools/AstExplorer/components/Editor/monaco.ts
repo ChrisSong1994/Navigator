@@ -15,6 +15,8 @@ import * as monaco from 'monaco-editor/esm/vs/editor/editor.api'
 import 'monaco-editor/esm/vs/language/json/monaco.contribution'
 import 'monaco-editor/esm/vs/basic-languages/javascript/javascript.contribution'
 import 'monaco-editor/esm/vs/basic-languages/yaml/yaml.contribution'
+// 编辑器功能（查找替换 / 折叠 / 注释…）与公共那份同源
+import '../../../../components/Editor/contributions.ts'
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
 import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker'
 

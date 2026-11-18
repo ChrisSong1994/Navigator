@@ -12,11 +12,15 @@
  * 80 多种语言全拖进来。各工具额外要的语言在自己的 languages.ts 里注册：那个模块进哪个 chunk，
  * 语言就只让谁付这份字节。
  *
+ * 编辑器功能（查找替换、折叠、多光标…）不在 editor.api 里，得单独引一层：见 ./contributions.ts。
+ *
  * 模块级副作用（loader.config 与 MonacoEnvironment 各只能设一次），所以必须共用这一份，不能各写各的。
  */
 import { loader } from '@monaco-editor/react'
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api'
 import 'monaco-editor/esm/vs/language/json/monaco.contribution'
+// 编辑器功能（查找替换 / 折叠 / 注释…）。副作用导入，必须在 MonacoEditor 挂载前跑完
+import './contributions.ts'
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
 import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker'
 
