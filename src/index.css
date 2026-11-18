@@ -70,9 +70,72 @@ body {
   background-image: radial-gradient(1100px 380px at 50% -140px, color-mix(in srgb, var(--spirit-accent) 16%, transparent), transparent 70%);
 }
 
-/* 扩展弹窗（popup.html）：整块内容就是一层 surface，不铺画布底色，也不留光晕 */
+/* 扩展弹窗（popup.html）：更轻的底色 + 顶部主色光晕，内容卡片浮在上面 */
 body.spirit-popup {
-  background: var(--spirit-surface);
+  --spirit-popup-bg: #eef1f7;
+  --spirit-popup-card: #ffffff;
+  --spirit-popup-inset: #f3f5fa;
+  --spirit-popup-inset-hover: #e9edf5;
+  --spirit-popup-border: rgba(15, 23, 42, 0.08);
+  --spirit-popup-border-strong: rgba(15, 23, 42, 0.14);
+  background:
+    radial-gradient(640px 260px at 50% -120px, color-mix(in srgb, var(--spirit-accent) 22%, transparent), transparent 70%),
+    var(--spirit-popup-bg);
+}
+
+[data-theme='dark'] body.spirit-popup {
+  --spirit-popup-bg: #0b0d13;
+  --spirit-popup-card: #171a22;
+  --spirit-popup-inset: #1f2430;
+  --spirit-popup-inset-hover: #272d3b;
+  --spirit-popup-border: rgba(255, 255, 255, 0.08);
+  --spirit-popup-border-strong: rgba(255, 255, 255, 0.14);
+}
+
+.spirit-popup-root {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 340px;
+  padding: 12px;
+}
+
+.spirit-popup-header,
+.spirit-popup-card {
+  border: 1px solid var(--spirit-popup-border);
+  background: var(--spirit-popup-card);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), var(--spirit-shadow);
+}
+
+.spirit-popup-header {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--spirit-accent) 10%, var(--spirit-popup-card)),
+      var(--spirit-popup-card)
+    );
+}
+
+.spirit-popup-tools button {
+  border: 1px solid var(--spirit-popup-border);
+  border-radius: 16px;
+  background: var(--spirit-popup-inset);
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.spirit-popup-tools button:hover {
+  background: color-mix(in srgb, var(--spirit-accent) 12%, var(--spirit-popup-card));
+  border-color: color-mix(in srgb, var(--spirit-accent) 32%, transparent);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
+}
+
+[data-theme='dark'] .spirit-popup-tools button:hover {
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.4);
 }
 
 /* 壁纸固定铺在最底层，页面结构与卡片仍保持原有层级与可读性 */

@@ -11,6 +11,7 @@
  */
 import { ExportOutlined, GlobalOutlined, SyncOutlined } from '@ant-design/icons'
 import { Alert, Button, Descriptions, Input, Tooltip, message } from 'antd'
+import type { DescriptionsProps } from 'antd'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { createBridge, isPopupPage, openToolPopup } from '../../lib/popup.ts'
@@ -19,6 +20,8 @@ import { parseUrlRecord, URL_FIELDS } from './lib/url.ts'
 import './UrlParse.css'
 
 const LABEL_STYLE = { width: 140 }
+
+type DescriptionsItems = NonNullable<DescriptionsProps['items']>
 
 const POPUP = {
   windowName: 'navigator-url-popup',
@@ -40,6 +43,54 @@ const UrlParseTool = () => {
   const trimmed = url.trim()
   const parsed = useMemo(() => parseUrlRecord(trimmed), [trimmed])
   const failed = trimmed !== '' && parsed === null
+
+  const descriptionItems = useMemo<DescriptionsItems>(() => {
+    if (!parsed) {
+      return URL_FIELDS.map((field) => ({
+        key: field.key,
+        label: field.key,
+        styles: { label: LABEL_STYLE },
+        children: field.description,
+      }))
+    }
+
+    const items: DescriptionsItems = []
+    for (const field of URL_FIELDS) {
+      if (field.key === 'searchParams') {
+        const entries = Object.entries(parsed.searchParams)
+        if (entries.length === 0) continue
+        items.push({
+          key: field.key,
+          label: field.key,
+          styles: { label: LABEL_STYLE },
+          children: (
+            <Descriptions
+              bordered
+              column={1}
+              size="small"
+              items={entries.map(([key, value]) => ({
+                key,
+                label: key,
+                styles: { label: LABEL_STYLE },
+                children: <span className="url-parse-tool-value">{value}</span>,
+              }))}
+            />
+          ),
+        })
+        continue
+      }
+
+      const value = parsed[field.key]
+      if (isEmpty(value)) continue
+      items.push({
+        key: field.key,
+        label: field.key,
+        styles: { label: LABEL_STYLE },
+        children: <span className="url-parse-tool-value">{value}</span>,
+      })
+    }
+    return items
+  }, [parsed])
 
   const handleOpenPopup = () => {
     const opened = openToolPopup('url', POPUP)
@@ -125,42 +176,10 @@ const UrlParseTool = () => {
       ) : null}
 
       {parsed ? (
-        <Descriptions bordered column={1} size="middle">
-          {URL_FIELDS.map((field) => {
-            if (field.key === 'searchParams') {
-              const entries = Object.entries(parsed.searchParams)
-              if (entries.length === 0) return null
-              return (
-                <Descriptions.Item key={field.key} label={field.key} styles={{ label: LABEL_STYLE }}>
-                  <Descriptions bordered column={1} size="small">
-                    {entries.map(([key, value]) => (
-                      <Descriptions.Item key={key} label={key} styles={{ label: LABEL_STYLE }}>
-                        <span className="url-parse-tool-value">{value}</span>
-                      </Descriptions.Item>
-                    ))}
-                  </Descriptions>
-                </Descriptions.Item>
-              )
-            }
-
-            const value = parsed[field.key]
-            if (isEmpty(value)) return null
-            return (
-              <Descriptions.Item key={field.key} label={field.key} styles={{ label: LABEL_STYLE }}>
-                <span className="url-parse-tool-value">{value}</span>
-              </Descriptions.Item>
-            )
-          })}
-        </Descriptions>
+        <Descriptions bordered column={1} size="middle" items={descriptionItems} />
       ) : (
         <div className="url-parse-tool-guide">
-          <Descriptions bordered column={1} size="middle">
-            {URL_FIELDS.map((field) => (
-              <Descriptions.Item key={field.key} label={field.key} styles={{ label: LABEL_STYLE }}>
-                {field.description}
-              </Descriptions.Item>
-            ))}
-          </Descriptions>
+          <Descriptions bordered column={1} size="middle" items={descriptionItems} />
         </div>
       )}
     </div>

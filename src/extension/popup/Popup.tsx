@@ -12,7 +12,6 @@ import {
   Button,
   ConfigProvider as AntConfigProvider,
   Input,
-  Segmented,
   Select,
   Skeleton,
   Tooltip,
@@ -25,7 +24,7 @@ import { LinkIcon } from '../../components/LinkIcon.tsx'
 import { ToolList } from '../../components/ToolList.tsx'
 import { findFavoriteInGroup, findFavorites } from '../../config/favorite.ts'
 import { DEFAULT_PRIMARY_COLOR } from '../../config/schema.ts'
-import type { NavLink, NavSettings, ThemeMode, ViewMode } from '../../config/schema.ts'
+import type { NavLink, NavSettings } from '../../config/schema.ts'
 import { useResolvedTheme } from '../../hooks/useResolvedTheme.ts'
 import { closePopup, openHomeTab, openSettingsTab, openToolTab, readActivePage, unfavoritableReason } from '../tabs.ts'
 import type { ActivePage } from '../tabs.ts'
@@ -61,7 +60,7 @@ function PopupTheme({ settings, children }: { settings: NavSettings; children: R
   const themeConfig = useMemo(
     () => ({
       algorithm: resolved === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
-      token: { colorPrimary: accent, borderRadius: 8 },
+      token: { colorPrimary: accent, borderRadius: 12 },
     }),
     [accent, resolved],
   )
@@ -79,19 +78,20 @@ function PopupTheme({ settings, children }: { settings: NavSettings; children: R
 
 function SectionTitle({ title, hint }: { title: string; hint?: string }) {
   return (
-    <div className="mb-2 flex items-baseline gap-2">
+    <div className="mb-2.5 flex items-center gap-2">
+      <span className="h-3.5 w-1 shrink-0 rounded-full bg-[var(--spirit-accent)]" />
       <h2 className="text-[13px] font-semibold tracking-tight text-[var(--spirit-text)]">{title}</h2>
-      {hint && <span className="truncate text-[11px] text-[var(--spirit-muted)]">{hint}</span>}
+      {hint && <span className="ml-auto truncate text-[11px] text-[var(--spirit-muted)]">{hint}</span>}
     </div>
   )
 }
 
 function PopupBody({ store }: { store: PopupConfigStore }) {
   return (
-    <div className="w-[340px] bg-[var(--spirit-surface)] text-[var(--spirit-text)]">
-      <header className="flex items-center gap-2 border-b border-[var(--spirit-border)] px-3 py-2.5">
-        <span className="truncate text-sm font-semibold tracking-tight">{store.settings.siteTitle}</span>
-        <div className="ml-auto flex items-center gap-1">
+    <div className="spirit-popup-root text-[var(--spirit-text)]">
+      <header className="spirit-popup-header flex items-center gap-2 rounded-2xl px-3 py-2.5">
+        <span className="min-w-0 truncate text-sm font-semibold tracking-tight">{store.settings.siteTitle}</span>
+        <div className="ml-auto flex shrink-0 items-center gap-0.5">
           <Tooltip title="配置面板">
             <Button
               size="small"
@@ -119,56 +119,29 @@ function PopupBody({ store }: { store: PopupConfigStore }) {
         </div>
       </header>
 
-      <div className="spirit-scroll max-h-[520px] overflow-y-auto">
+      <div className="spirit-scroll flex max-h-[512px] flex-col gap-3 overflow-y-auto pb-1">
         {store.error && (
-          <div className="px-3 pt-3">
-            <Alert type="error" showIcon message={store.error} closable onClose={store.dismissError} />
-          </div>
+          <Alert type="error" showIcon message={store.error} closable onClose={store.dismissError} />
         )}
 
-        <section className="px-3 py-3">
+        <section className="spirit-popup-card rounded-2xl px-3 py-3">
           <SectionTitle title="收藏当前页" />
           <FavoriteSection store={store} />
         </section>
 
-        <section className="border-t border-[var(--spirit-border)] px-1.5 py-3">
-          <div className="px-1.5">
-            <SectionTitle title="工具箱" hint="在新标签页里打开" />
+        <section className="spirit-popup-card rounded-2xl px-3 py-3">
+          <SectionTitle title="工具箱" hint="在新标签页里打开" />
+          <div className="spirit-popup-tools">
+            <ToolList
+              layout="grid"
+              onSelect={(key) => {
+                openToolTab(key)
+                closePopup()
+              }}
+            />
           </div>
-          <ToolList
-            onSelect={(key) => {
-              openToolTab(key)
-              closePopup()
-            }}
-          />
         </section>
 
-        <section className="border-t border-[var(--spirit-border)] px-3 py-3">
-          <SectionTitle title="外观" />
-          <div className="flex flex-col gap-2">
-            <Segmented
-              block
-              size="small"
-              value={store.settings.themeMode}
-              onChange={(value) => store.updateSettings({ themeMode: value as ThemeMode })}
-              options={[
-                { label: '跟随系统', value: 'system' },
-                { label: '浅色', value: 'light' },
-                { label: '深色', value: 'dark' },
-              ]}
-            />
-            <Segmented
-              block
-              size="small"
-              value={store.settings.viewMode}
-              onChange={(value) => store.updateSettings({ viewMode: value as ViewMode })}
-              options={[
-                { label: '卡片', value: 'card' },
-                { label: '列表', value: 'list' },
-              ]}
-            />
-          </div>
-        </section>
       </div>
     </div>
   )
@@ -277,7 +250,7 @@ function FavoriteSection({ store }: { store: PopupConfigStore }) {
           />
         </div>
       ) : (
-        <div className="flex items-center gap-2.5 rounded-xl bg-[var(--spirit-inset)] px-3 py-2.5">
+        <div className="flex items-center gap-2.5 rounded-2xl border border-[var(--spirit-popup-border)] bg-[var(--spirit-popup-inset)] px-3 py-2.5">
           <LinkIcon link={link} size={20} />
           <div className="min-w-0 flex-1">
             <div className="truncate text-[13px] leading-tight" title={link.text}>
