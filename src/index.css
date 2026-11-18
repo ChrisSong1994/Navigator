@@ -71,6 +71,13 @@ body {
 }
 
 /* 扩展弹窗（popup.html）：更轻的底色 + 顶部主色光晕，内容卡片浮在上面 */
+/* popup 由内容自撑高度，不用首页 html/body 的 min-height: 100% */
+html.spirit-popup,
+body.spirit-popup {
+  height: auto;
+  min-height: 0;
+}
+
 body.spirit-popup {
   --spirit-popup-bg: #eef1f7;
   --spirit-popup-card: #ffffff;
