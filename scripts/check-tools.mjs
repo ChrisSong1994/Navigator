@@ -90,6 +90,14 @@ import {
 import { SAMPLE_JSON, SAMPLE_YAML, SAMPLE_JS_OBJECT } from '../src/tools/Transform/lib/sample.ts'
 import { parseJsObject, parseJson, parseYaml } from '../src/tools/Transform/lib/parse.ts'
 import { parseUrlRecord, URL_FIELDS } from '../src/tools/UrlParse/lib/url.ts'
+import {
+  buildRegexp,
+  findMatches,
+  joinFlags,
+  namedGroupsOf,
+  replaceText,
+} from '../src/tools/Regexp/lib/regex.ts'
+import { DATASOURCE, EXAMPLE_DATASOURCE } from '../src/tools/Regexp/lib/cheatsheet.ts'
 
 let passed = 0
 const test = (name, fn) => {
@@ -1514,7 +1522,149 @@ test('URL 解析：空输入与非法地址返回 null，字段表保持固定�
   )
 })
 
+// —— 正则工具 -------------------------------------------------------------
+// 上游 regMatch.ts 靠 indexOf 猜分组位置，下面几条正是它会算错的地方：重复值、lookbehind、
+// 未参与的分组。用 d 修饰符的 indices 之后这些都要对，这几条断言就是钉住它。
+
+const matchOne = (pattern, flags, text) => findMatches(buildRegexp(pattern, flags), text)
+
+test('正则：修饰符顺序固定，d 由内部追加', () => {
+  assert.equal(joinFlags(['m', 'g', 'i']), 'gim')
+  assert.equal(joinFlags(['g']), 'g')
+  // 界面只认 g / i / m；别的即使混进来也被筛掉
+  assert.equal(joinFlags(['g', 's', 'd']), 'g')
+  // flag 字符串由引擎自己规整成字母序，所以断言的是「有 g 有 d」，不是拼出来的顺序
+  assert.match(buildRegexp('a', ['g']).flags, /^(?=.*g)(?=.*d)[dgimsuy]+$/)
+  assert.equal(buildRegexp('a', []).flags, 'd')
+})
+
+test('正则：全局匹配的数量、位置与交替出现', () => {
+  const { matches, truncated } = matchOne('a', ['g'], 'a1a2a')
+  assert.equal(truncated, false)
+  assert.deepEqual(
+    matches.map((item) => [item.index, item.length, item.value]),
+    [
+      [0, 1, 'a'],
+      [2, 1, 'a'],
+      [4, 1, 'a'],
+    ],
+  )
+})
+
+test('正则：没有 g 时只匹配第一处（与 String.match 口径一致）', () => {
+  const { matches } = matchOne('a', [], 'a1a')
+  assert.equal(matches.length, 1)
+  assert.equal(matches[0].index, 0)
+})
+
+test('正则：分组区间来自 indices —— 重复分组值也各算各的', () => {
+  // 上游这里会两次 indexOf 到同一个 a，第二个区间的起点是错的
+  const { matches } = matchOne(String.raw`(\w)\1`, ['g'], 'aa bb')
+  assert.equal(matches.length, 2)
+  assert.deepEqual(
+    matches[0].groups.map((group) => [group.key, group.index, group.length, group.value]),
+    [[1, 0, 1, 'a']],
+  )
+  assert.deepEqual(
+    matches[1].groups.map((group) => [group.key, group.index, group.length, group.value]),
+    [[1, 3, 1, 'b']],
+  )
+})
+
+test('正则：反向预查里的分组也能给出区间（索引在匹配值之外）', () => {
+  // 上游拿 matchedValue.indexOf 找，'a' 根本不在 'b' 里，区间必然算不出来
+  const { matches } = matchOne(String.raw`(?<=(\w))b`, ['g'], 'ab cb')
+  assert.equal(matches.length, 2)
+  assert.equal(matches[0].index, 1)
+  assert.deepEqual(
+    matches.map((item) => item.groups[0].index),
+    [0, 3],
+  )
+})
+
+test('正则：未参与匹配的分组照样列出来，区间与值都是空的', () => {
+  const { matches } = matchOne('(a)|(b)', ['g'], 'ab')
+  assert.equal(matches.length, 2)
+  assert.deepEqual(
+    matches[0].groups.map((group) => [group.key, group.index, group.value]),
+    [
+      [1, 0, 'a'],
+      [2, null, undefined],
+    ],
+  )
+  assert.deepEqual(
+    matches[1].groups.map((group) => [group.key, group.index, group.value]),
+    [
+      [1, null, undefined],
+      [2, 1, 'b'],
+    ],
+  )
+})
+
+test('正则：命名分组的名字按源码数出来，未参与时也知道自己叫什么', () => {
+  assert.deepEqual([...namedGroupsOf(String.raw`(?<word>\w+)-(?<num>\d+)`)], [
+    [1, 'word'],
+    [2, 'num'],
+  ])
+  // 环视不是命名分组
+  assert.deepEqual([...namedGroupsOf(String.raw`(?<=(\w))b`)], [])
+  // 字符类里的括号不计数：下面这个命名分组是第 1 个，不是第 2 个
+  assert.deepEqual([...namedGroupsOf(String.raw`[(](?<x>\d)`)], [[1, 'x']])
+
+  const { matches } = matchOne(String.raw`(?<word>a)|(?<other>b)`, ['g'], 'b')
+  assert.deepEqual(
+    matches[0].groups.map((group) => [group.key, group.name, group.value]),
+    [
+      [1, 'word', undefined],
+      [2, 'other', 'b'],
+    ],
+  )
+})
+
+test('正则：零宽匹配不丢、也不原地打转', () => {
+  const { matches } = matchOne(String.raw`\b`, ['g'], 'hi there')
+  assert.deepEqual(
+    matches.map((item) => [item.index, item.length]),
+    [
+      [0, 0],
+      [2, 0],
+      [3, 0],
+      [8, 0],
+    ],
+  )
+})
+
+test('正则：超过上限就截断，并用 truncated 说明', () => {
+  const { matches, truncated } = findMatches(buildRegexp('a', ['g']), 'aaaa', 3)
+  assert.equal(matches.length, 3)
+  assert.equal(truncated, true)
+})
+
+test('正则：替换交给原生 —— $1 / $& / $<name> 与全局口径一致', () => {
+  const swap = buildRegexp(String.raw`(\w+)@(\w+)`, ['g'])
+  assert.equal(replaceText(swap, 'a@b c@d', '$2@$1'), 'b@a d@c')
+  assert.equal(replaceText(buildRegexp(String.raw`\d+`, []), 'a1b2', '[$&]'), 'a[1]b2')
+  assert.equal(replaceText(buildRegexp(String.raw`(?<x>\d)`, ['g']), 'a1', '<$<x>>'), 'a<1>')
+  // 零宽替换不会卡死，也不会无限膨胀
+  assert.equal(replaceText(buildRegexp('', ['g']), 'ab', '-'), '-a-b-')
+})
+
+test('正则：非法 pattern 抛错，错误信息能直接给人看', () => {
+  assert.throws(() => buildRegexp('(', []), /Invalid regular expression/)
+})
+
+test('正则：速查表里的转义都还在（上游搬过来时丢过一遍）', () => {
+  const syntaxes = DATASOURCE.map((row) => row.syntax)
+  for (const expected of ['\\d', '\\D', '\\w', '\\W', '\\s', '\\S', '\\b']) {
+    assert.ok(syntaxes.includes(expected), `速查表里缺 ${expected}`)
+  }
+  assert.ok(!syntaxes.includes('d'), '速查表里还留着丢了转义的 d')
+  // 示例里的正则也要真的能编译
+  for (const row of EXAMPLE_DATASOURCE) {
+    assert.doesNotThrow(() => new RegExp(row.syntax), `示例「${row.description}」编译不过`)
+  }
+})
+
 // AST 那边几个用例要等 loadParser 的动态 import
 await Promise.all(pending)
-
 console.log(`\n工具逻辑冒烟：${passed} 项通过${process.exitCode ? '，有失败项' : ''}`)

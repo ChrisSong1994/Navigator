@@ -3,6 +3,7 @@ import {
   CodeOutlined,
   DiffOutlined,
   FileMarkdownOutlined,
+  FileSearchOutlined,
   GlobalOutlined,
   PartitionOutlined,
   SwapOutlined,
@@ -75,6 +76,14 @@ export const TOOLS: ToolEntry[] = [
     description: '拆解协议 / 主机 / 端口 / 路径 / 哈希 / 查询参数，实时解析',
     icon: <GlobalOutlined />,
     content: lazy(() => import('./UrlParse/index.tsx')),
+  },
+  {
+    key: 'regexp',
+    title: '正则',
+    description: '正则测试 / 匹配高亮与明细 / 分组区间 / 替换结果 / 语法速查',
+    // antd 没有正则图标，文件放大镜最接近「拿一段文本去匹配」
+    icon: <FileSearchOutlined />,
+    content: lazy(() => import('./Regexp/index.tsx')),
   },
 ]
 

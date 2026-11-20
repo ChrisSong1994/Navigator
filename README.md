@@ -17,7 +17,7 @@
 - **壁纸**：关闭、Bing 最近 8 天选图、按间隔自动轮播、自定义图片直链，可调压暗与模糊
 - **配置同步**：跨设备同步，内置配置与本地配置按权重合并，导入导出 JSON 或 Chrome 书签 HTML
 - **Chrome 书签**：手动从书签栏拉取，或把当前配置推送到「导航精灵」文件夹
-- **工具箱**：颜色、JSON、Markdown、AST、Transform、Diff、URL 解析，按需懒加载
+- **工具箱**：颜色、JSON、Markdown、AST、Transform、Diff、URL 解析、正则，按需懒加载
 - **扩展弹窗**：收藏当前页、工具列表、主题与展示模式一键切换
 
 ## 工具箱
@@ -33,6 +33,7 @@
 | Transform | JSON / YAML / JavaScript 对象互转 TypeScript、Go、Java、Kotlin、MySQL、JSON Schema |
 | Diff | 左右文本对比，两边可编辑，26 种语言高亮 |
 | URL 解析 | 协议 / 主机 / 端口 / 路径 / 哈希 / 查询参数实时拆解 |
+| 正则 | 匹配高亮与明细、分组区间、替换（`$1` / `$<name>`）、修饰符 g/i/m、语法速查、历史 |
 
 Markdown / JSON 还支持浏览器里直接打开本机 `.md` / `.json`，以及把文件拖到窗口里。
 

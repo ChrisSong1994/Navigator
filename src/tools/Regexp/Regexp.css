@@ -1,0 +1,453 @@
+/**
+ * 正则工具自己的样式。上游 pages/Regexp 的 index.module.less 只有几条（头部 flex、结果区固定 160px、
+ * 交替色高亮），搬过来以后布局与配色都重写了：
+ *
+ * - 高度不再写死（上游 200 / 160 / calc(100vh - 150px)），改由 index.tsx 的 useFillHeight 量；
+ * - 颜色一律走 --spirit-* token。上游写死 #ffdfff / #cff5ff / #d9d9d9，深色模式下是白底黑字；
+ * - 高亮仍然交替两色（上游 `<b>` 的 odd/even），但取主色的两种浓淡，明暗各一套。
+ */
+
+:root {
+  --regexp-tool-danger: #cf1322;
+  --regexp-tool-mark-1: color-mix(in srgb, var(--spirit-accent) 22%, transparent);
+  --regexp-tool-mark-2: color-mix(in srgb, var(--spirit-accent) 12%, transparent);
+  --regexp-tool-mark-active: color-mix(in srgb, var(--spirit-accent) 45%, transparent);
+  --regexp-tool-mark-line: color-mix(in srgb, var(--spirit-accent) 60%, transparent);
+}
+
+[data-theme='dark'] {
+  --regexp-tool-danger: #ff7875;
+  --regexp-tool-mark-1: color-mix(in srgb, var(--spirit-accent) 38%, transparent);
+  --regexp-tool-mark-2: color-mix(in srgb, var(--spirit-accent) 22%, transparent);
+  --regexp-tool-mark-active: color-mix(in srgb, var(--spirit-accent) 62%, transparent);
+  --regexp-tool-mark-line: color-mix(in srgb, var(--spirit-accent) 80%, transparent);
+}
+
+.regexp-tool-root {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+  min-height: 0;
+}
+
+/* 顶栏 -------------------------------------------------------------------- */
+
+.regexp-tool-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* pattern 输入 + 两个下拉。窄屏时输入框先换行，下拉仍挨在一起 */
+.regexp-tool-pattern {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.regexp-tool-pattern > .ant-input-affix-wrapper {
+  flex: 1;
+  min-width: 220px;
+}
+
+/* 输入框两头的 `/` 与 `/{flags}`：等宽，跟正则源码看起来是一回事 */
+.regexp-tool-delimiter {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--spirit-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 16px;
+}
+
+.regexp-tool-error-icon {
+  color: var(--regexp-tool-danger);
+}
+
+.regexp-tool-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.regexp-tool-toolbar-right .ant-btn[data-active='true'] {
+  background: var(--spirit-inset);
+  color: var(--spirit-accent);
+}
+
+/* 修饰符下拉 -------------------------------------------------------------- */
+
+.regexp-tool-flags {
+  min-width: 180px;
+}
+
+.regexp-tool-flags-divider {
+  height: 1px;
+  margin: 8px 0;
+  background: var(--spirit-border);
+}
+
+/* 语法速查表 -------------------------------------------------------------- */
+
+.regexp-tool-cheatsheet {
+  /* 窄屏跟着视口收：写死 680px 的话弹层会比窗口宽，antd 只能把它推到屏幕外 */
+  width: min(680px, calc(100vw - 48px));
+  max-height: min(70vh, 640px);
+  overflow: auto;
+}
+
+/* 窄屏是抽屉，宽度交给抽屉，自己别再定宽 */
+.regexp-tool-cheat-drawer .regexp-tool-cheatsheet {
+  width: 100%;
+  max-height: none;
+  overflow-x: hidden;
+}
+
+/* 抽屉里表格按容器宽度排（外面弹层里也是这么排的），别让「语法」那列把正文挤出去 */
+.regexp-tool-cheat-drawer .ant-table {
+  table-layout: auto;
+}
+
+.regexp-tool-cheat-drawer .ant-table-cell {
+  white-space: normal;
+  word-break: break-word;
+}
+
+/* 表格列宽跟着窄屏收：宽度本身交给 antd 按容器算（写死宽度会把右边挤出弹层） */
+.regexp-tool-cheatsheet .ant-table-cell {
+  font-size: 12px;
+}
+
+.regexp-tool-cheatsheet .ant-table-cell:first-child {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: nowrap;
+}
+
+/* 分栏 -------------------------------------------------------------------- */
+
+.regexp-tool-splitter {
+  min-height: 0;
+}
+
+/* 一栏：面板头 + 内容，内容自己撑满剩下的高度 */
+.regexp-tool-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  /* 分栏中间的拖拽条自带间距，这里只描边 */
+  overflow: hidden;
+  border: 1px solid var(--spirit-border);
+  border-radius: 10px;
+  background: var(--spirit-surface);
+}
+
+.regexp-tool-pane-head {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 34px;
+  padding: 2px 8px;
+  border-bottom: 1px solid var(--spirit-border);
+  background: var(--spirit-inset);
+  color: var(--spirit-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.regexp-tool-muted {
+  color: var(--spirit-muted);
+  font-weight: 400;
+}
+
+/* 编辑器：monaco 要在有确定高度的盒子里 */
+.regexp-tool-editor {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 左下的替换行 ------------------------------------------------------------ */
+
+.regexp-tool-replace-row {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-top: 1px solid var(--spirit-border);
+}
+
+.regexp-tool-replace-row > .ant-input {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* 右侧结果 ---------------------------------------------------------------- */
+
+.regexp-tool-result {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+/* 匹配结果：高亮区按内容高、明细表吃掉剩下的；两者都能滚，各滚各的 */
+.regexp-tool-result-match {
+  gap: 8px;
+  padding: 8px;
+}
+
+.regexp-tool-highlight-box {
+  flex: 0 1 auto;
+  max-height: 45%;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--spirit-border);
+  border-radius: 8px;
+  background: var(--spirit-inset);
+}
+
+.regexp-tool-highlight {
+  color: var(--spirit-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  /* 原文里的换行与连续空格都要留住 */
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.regexp-tool-highlight-note {
+  margin-top: 6px;
+  color: var(--spirit-muted);
+  font-size: 12px;
+}
+
+/* 命中处：交替两色，选中的那一处再深一档 */
+.regexp-tool-mark {
+  padding: 0;
+  border-radius: 3px;
+  background: var(--regexp-tool-mark-1);
+  box-shadow: inset 0 -1px 0 var(--regexp-tool-mark-line);
+  color: inherit;
+  cursor: pointer;
+}
+
+.regexp-tool-mark[data-parity='even'] {
+  background: var(--regexp-tool-mark-2);
+}
+
+.regexp-tool-mark:hover {
+  box-shadow: inset 0 -2px 0 var(--spirit-accent);
+}
+
+.regexp-tool-mark[data-active='true'] {
+  background: var(--regexp-tool-mark-active);
+  box-shadow: 0 0 0 1px var(--spirit-accent);
+}
+
+/* 零宽匹配：<mark> 里没有字，画成一条竖线，否则既看不见也点不着 */
+.regexp-tool-mark-zero {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin: 0 1px;
+  padding: 0;
+  vertical-align: text-bottom;
+  border-radius: 1px;
+  background: var(--spirit-accent);
+  box-shadow: none;
+}
+
+.regexp-tool-mark-zero[data-active='true'] {
+  width: 3px;
+  box-shadow: 0 0 0 2px var(--regexp-tool-mark-active);
+}
+
+/* 明细表 */
+.regexp-tool-table-box {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.regexp-tool-table {
+  font-size: 12px;
+}
+
+.regexp-tool-table .ant-table-tbody > tr {
+  cursor: pointer;
+}
+
+.regexp-tool-table .regexp-tool-row-active > td {
+  background: var(--spirit-inset);
+}
+
+.regexp-tool-num {
+  color: var(--spirit-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.regexp-tool-match-value {
+  color: var(--spirit-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  word-break: break-all;
+}
+
+/* 分组（行展开区） */
+.regexp-tool-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.regexp-tool-groups-empty {
+  font-size: 12px;
+}
+
+.regexp-tool-group-row {
+  display: grid;
+  grid-template-columns: 130px 140px minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.regexp-tool-group-row:nth-child(odd) {
+  background: var(--spirit-inset);
+}
+
+.regexp-tool-group-key {
+  color: var(--spirit-accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+/* 空态 / 报错 ------------------------------------------------------------- */
+
+.regexp-tool-placeholder {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  min-height: 0;
+  padding: 16px;
+}
+
+.regexp-tool-result > .ant-alert {
+  margin: 8px;
+}
+
+/* 历史记录 ---------------------------------------------------------------- */
+
+.regexp-tool-history {
+  width: min(520px, 80vw);
+  max-height: min(60vh, 420px);
+  overflow: auto;
+}
+
+.regexp-tool-history-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 0 6px 8px;
+  border-bottom: 1px solid var(--spirit-border);
+  font-weight: 600;
+}
+
+.regexp-tool-history-empty {
+  padding: 8px 0;
+}
+
+.regexp-tool-history-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+}
+
+.regexp-tool-history-item {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--spirit-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.regexp-tool-history-item:hover:not(:disabled) {
+  background: var(--spirit-inset);
+}
+
+.regexp-tool-history-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.regexp-tool-history-info {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.regexp-tool-history-name {
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.regexp-tool-history-date {
+  flex-shrink: 0;
+  color: var(--spirit-muted);
+  font-size: 11px;
+}
+
+.regexp-tool-history-note {
+  overflow: hidden;
+  color: var(--spirit-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 窄屏 ---------------------------------------------------------------------- */
+
+/* 分栏方向由 index.tsx 的 useNarrowViewport 翻成上下（antd Splitter 的方向是 JS 决定的）。
+   这里只管各栏内部：分组表挤成两列，位置区间让小屏先让位 */
+@media (max-width: 640px) {
+  .regexp-tool-group-row {
+    grid-template-columns: 100px minmax(0, 1fr);
+  }
+
+  .regexp-tool-group-row > .regexp-tool-num {
+    display: none;
+  }
+
+  /* 上下分栏时两块面板各占一半，编辑器与结果都得能滚 */
+  .regexp-tool-pane-head {
+    flex-wrap: wrap;
+  }
+}
